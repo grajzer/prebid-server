@@ -433,7 +433,7 @@ type MetricsEngine interface {
 	RecordImps(labels ImpLabels)                           // RecordImps across openRTB2 engines that support the 'Native' Imp Type
 	RecordRequestTime(labels Labels, length time.Duration) // ignores adapter. only statusOk and statusErr fom status
 	RecordOverheadTime(overHead OverheadType, length time.Duration)
-	RecordAdapterRequest(labels AdapterLabels)
+	RecordAdapterRequest(labels AdapterLabels, storedImp string)
 	RecordAdapterConnections(adapterName openrtb_ext.BidderName, connWasReused bool, connWaitTime time.Duration)
 	RecordDNSTime(dnsLookupTime time.Duration)
 	RecordTLSHandshakeTime(tlsHandshakeTime time.Duration)

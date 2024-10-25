@@ -769,7 +769,7 @@ func (m *Metrics) RecordStoredDataError(labels metrics.StoredDataLabels) {
 	}
 }
 
-func (m *Metrics) RecordAdapterRequest(labels metrics.AdapterLabels) {
+func (m *Metrics) RecordAdapterRequest(labels metrics.AdapterLabels, storedImp string) {
 	lowerCasedAdapter := strings.ToLower(string(labels.Adapter))
 	m.adapterRequests.With(prometheus.Labels{
 		adapterLabel: lowerCasedAdapter,

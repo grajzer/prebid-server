@@ -311,6 +311,10 @@ func (e *exchange) HoldAuction(ctx context.Context, r *AuctionRequest, debugLog 
 
 	bidAdjustmentFactors := getExtBidAdjustmentFactors(requestExtPrebid)
 
+	if len(bidAdjustmentFactors) == 0 {
+		bidAdjustmentFactors = bidadjustment.CustomAdjustement(r.BidRequestWrapper);
+	}
+
 	recordImpMetrics(r.BidRequestWrapper, e.me)
 
 	// Make our best guess if GDPR applies
@@ -730,7 +734,7 @@ func (e *exchange) getAllBids(
 			brw.adapter = bidderRequest.BidderCoreName
 			// Defer basic metrics to insure we capture them after all the values have been set
 			defer func() {
-				e.me.RecordAdapterRequest(bidderRequest.BidderLabels)
+				e.me.RecordAdapterRequest(bidderRequest.BidderLabels, bidderRequest.BidRequest.Imp[0].ID)
 			}()
 			start := time.Now()
 
