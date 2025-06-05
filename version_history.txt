@@ -1,0 +1,13 @@
+2025-06-05	v3
+2025-06-03	exchange.go, custom_adjustement.go -- adding CleanBidExtensions
+2025-06-03	exchange.go -- adding r.BidRequestWrapper.BidRequest.Cur = []string{"EUR"}
+2025-05-30	pbs.yaml -- removing tcf2 enabled flag
+2025-05-29	custom_adjustement.go, exchange.go -- added ApplyDebugFlag function and this file
+2025-05-27	pbs.yaml -- gdpr and user_sync settings
+2025-05-27	pbs.yaml -- added url for appnexus usersync redirect
+2025-05-27	pbs.yaml -- added auction_timeouts_ms to see if it helps with canceled requests
+2025-05-27	load-cookie.html -- added to static folder and changed application.go to serve it
+2025-05-27	proxy_settings.conf -- added this file to .platform/nginx/conf.d to fix 500 errors
+2025-05-19	custom_adjustement.go -- fixed errors when bidfixedprice is specified and no bids returned
+2025-05-19	pbs.yaml -- added freewheelssp, smartadserver, visx bidders
+2025-02-25	yieldlab.go, imp_yieldlab.go -- added support for customParams

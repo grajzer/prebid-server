@@ -51,6 +51,10 @@ func (a *YieldlabAdapter) makeEndpointURL(req *openrtb2.BidRequest, params *open
 	q.Set("ts", a.cacheBuster())
 	q.Set("t", a.makeTargetingValues(params))
 
+	for k, v := range params.CustomParams {
+		q.Set(k, v)
+	}
+
 	if hasFormats, formats := a.makeFormats(req); hasFormats {
 		q.Set("sizes", formats)
 	}
@@ -290,17 +294,22 @@ func (a *YieldlabAdapter) parseRequest(request *openrtb2.BidRequest) []*openrtb_
 func (a *YieldlabAdapter) mergeParams(params []*openrtb_ext.ExtImpYieldlab) *openrtb_ext.ExtImpYieldlab {
 	var adSlotIds []string
 	targeting := make(map[string]string)
+	customParams := make(map[string]string)
 
 	for _, p := range params {
 		adSlotIds = append(adSlotIds, p.AdslotID)
 		for k, v := range p.Targeting {
 			targeting[k] = v
 		}
+		for k, v := range p.CustomParams {
+			customParams[k] = v
+		}
 	}
 
 	return &openrtb_ext.ExtImpYieldlab{
-		AdslotID:  strings.Join(adSlotIds, adSlotIdSeparator),
-		Targeting: targeting,
+		AdslotID:     strings.Join(adSlotIds, adSlotIdSeparator),
+		Targeting:    targeting,
+		CustomParams: customParams,
 	}
 }
 

@@ -77,6 +77,11 @@ func serve(cfg *config.Configuration) error {
 		return err
 	}
 
+	// Create a separate router for static files (load-cookie.html)
+	staticRouter := http.NewServeMux()
+	fs := http.FileServer(http.Dir("./static"))
+	staticRouter.Handle("/static/", http.StripPrefix("/static/", fs))
+
 	corsRouter := router.SupportCORS(r)
 	if err := server.Listen(cfg, router.NoCache{Handler: corsRouter}, router.Admin(currencyConverter, fetchingInterval), r.MetricsEngine); err != nil {
 		glog.Fatalf("prebid-server returned an error: %v", err)

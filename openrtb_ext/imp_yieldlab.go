@@ -6,4 +6,5 @@ type ExtImpYieldlab struct {
 	SupplyID  string            `json:"supplyId"`
 	Targeting map[string]string `json:"targeting"`
 	ExtId     string            `json:"extId"`
+	CustomParams map[string]string `json:"customParams"`
 }

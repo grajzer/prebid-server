@@ -243,6 +243,10 @@ func (e *exchange) HoldAuction(ctx context.Context, r *AuctionRequest, debugLog 
 		return nil, nil
 	}
 
+	if r.BidRequestWrapper.BidRequest.Cur == nil || len(r.BidRequestWrapper.BidRequest.Cur) == 0 {
+		r.BidRequestWrapper.BidRequest.Cur = []string{"EUR"}
+	}
+
 	err := r.HookExecutor.ExecuteProcessedAuctionStage(r.BidRequestWrapper)
 	if err != nil {
 		return nil, err
@@ -266,6 +270,8 @@ func (e *exchange) HoldAuction(ctx context.Context, r *AuctionRequest, debugLog 
 			DataCenter:  e.server.DataCenter}
 		requestExt.SetPrebid(requestExtPrebid)
 	}
+
+	requestExtPrebid = bidadjustment.ApplyDebugFlag(r.BidRequestWrapper, requestExtPrebid)
 
 	cacheInstructions := getExtCacheInstructions(requestExtPrebid)
 
@@ -315,6 +321,10 @@ func (e *exchange) HoldAuction(ctx context.Context, r *AuctionRequest, debugLog 
 	}
 
 	bidAdjustmentFactors := getExtBidAdjustmentFactors(requestExtPrebid)
+
+	if len(bidAdjustmentFactors) == 0 {
+		bidAdjustmentFactors = bidadjustment.CustomAdjustement(r.BidRequestWrapper)
+	}
 
 	recordImpMetrics(r.BidRequestWrapper, e.me)
 
@@ -542,6 +552,8 @@ func (e *exchange) HoldAuction(ctx context.Context, r *AuctionRequest, debugLog 
 	// Build the response
 	bidResponse := e.buildBidResponse(ctx, liveAdapters, adapterBids, r.BidRequestWrapper, adapterExtra, auc, bidResponseExt, cacheInstructions.returnCreative, r.ImpExtInfoMap, r.PubID, errs, &seatNonBidBuilder)
 	bidResponse = adservertargeting.Apply(r.BidRequestWrapper, r.ResolvedBidRequest, bidResponse, r.QueryParams, bidResponseExt, r.Account.TruncateTargetAttribute)
+	bidResponse = bidadjustment.ApplyFixedPrice(r.BidRequestWrapper, bidResponse)
+	bidResponse = bidadjustment.CleanBidExtensions(bidResponse)
 
 	bidResponse.Ext, err = encodeBidResponseExt(bidResponseExt)
 	if err != nil {
