@@ -791,7 +791,7 @@ func (e *exchange) getAllBids(
 			brw.adapter = bidderRequest.BidderCoreName
 			// Defer basic metrics to insure we capture them after all the values have been set
 			defer func() {
-				e.me.RecordAdapterRequest(bidderRequest.BidderLabels)
+				e.me.RecordAdapterRequest(bidderRequest.BidderLabels, bidderRequest.BidRequest.Imp[0].ID)
 			}()
 			start := time.Now()
 

@@ -128,9 +128,9 @@ func (me *MultiMetricsEngine) RecordAdapterPanic(labels metrics.AdapterLabels) {
 }
 
 // RecordAdapterRequest across all engines
-func (me *MultiMetricsEngine) RecordAdapterRequest(labels metrics.AdapterLabels) {
+func (me *MultiMetricsEngine) RecordAdapterRequest(labels metrics.AdapterLabels, storedImp string) {
 	for _, thisME := range *me {
-		thisME.RecordAdapterRequest(labels)
+		thisME.RecordAdapterRequest(labels, storedImp)
 	}
 }
 
@@ -412,7 +412,7 @@ func (me *NilMetricsEngine) RecordAdapterPanic(labels metrics.AdapterLabels) {
 }
 
 // RecordAdapterRequest as a noop
-func (me *NilMetricsEngine) RecordAdapterRequest(labels metrics.AdapterLabels) {
+func (me *NilMetricsEngine) RecordAdapterRequest(labels metrics.AdapterLabels, storedImp string) {
 }
 
 // RecordAdapterConnections as a noop

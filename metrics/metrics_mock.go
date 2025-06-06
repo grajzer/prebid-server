@@ -58,7 +58,7 @@ func (me *MetricsEngineMock) RecordAdapterPanic(labels AdapterLabels) {
 }
 
 // RecordAdapterRequest mock
-func (me *MetricsEngineMock) RecordAdapterRequest(labels AdapterLabels) {
+func (me *MetricsEngineMock) RecordAdapterRequest(labels AdapterLabels, storedImp string) {
 	me.Called(labels)
 }
 

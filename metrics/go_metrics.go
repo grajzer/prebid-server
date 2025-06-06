@@ -692,7 +692,7 @@ func (me *Metrics) RecordAdapterPanic(labels AdapterLabels) {
 }
 
 // RecordAdapterRequest implements a part of the MetricsEngine interface
-func (me *Metrics) RecordAdapterRequest(labels AdapterLabels) {
+func (me *Metrics) RecordAdapterRequest(labels AdapterLabels, storedImp string) {
 	adapterStr := string(labels.Adapter)
 	lowerCaseAdapter := strings.ToLower(adapterStr)
 	am, ok := me.AdapterMetrics[lowerCaseAdapter]
@@ -705,11 +705,13 @@ func (me *Metrics) RecordAdapterRequest(labels AdapterLabels) {
 	switch labels.AdapterBids {
 	case AdapterBidNone:
 		am.NoBidMeter.Mark(1)
+		RecordStoredImp(me, storedImp, lowerCaseAdapter, "nobid")
 		if ok {
 			aam.NoBidMeter.Mark(1)
 		}
 	case AdapterBidPresent:
 		am.GotBidsMeter.Mark(1)
+		RecordStoredImp(me, storedImp, lowerCaseAdapter, "gotbids")
 		if ok {
 			aam.GotBidsMeter.Mark(1)
 		}
@@ -723,6 +725,14 @@ func (me *Metrics) RecordAdapterRequest(labels AdapterLabels) {
 	if labels.CookieFlag == CookieFlagNo {
 		am.NoCookieMeter.Mark(1)
 	}
+}
+
+// Our helper function to record stored request gotbids/nobid
+func RecordStoredImp(me *Metrics, storedImp string, adapterName string, measurement string) {
+	custMeterName := fmt.Sprintf("stored_imp.%s.%s.requests.%s", storedImp, adapterName, measurement)
+	fmt.Println("RecordStoredImp", custMeterName)
+	custMeter := metrics.GetOrRegisterMeter(custMeterName, me.MetricsRegistry)
+	custMeter.Mark(1)
 }
 
 // Keeps track of created and reused connections to adapter bidders and the time from the
