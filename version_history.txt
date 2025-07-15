@@ -1,4 +1,5 @@
-2025-06-05	v3
+2025-07-15  custom_adjustement.go, set our bid response 
+2025-06-06	v3
 2025-06-03	exchange.go, custom_adjustement.go -- adding CleanBidExtensions
 2025-06-03	exchange.go -- adding r.BidRequestWrapper.BidRequest.Cur = []string{"EUR"}
 2025-05-30	pbs.yaml -- removing tcf2 enabled flag

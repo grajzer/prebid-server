@@ -553,6 +553,7 @@ func (e *exchange) HoldAuction(ctx context.Context, r *AuctionRequest, debugLog 
 	bidResponse := e.buildBidResponse(ctx, liveAdapters, adapterBids, r.BidRequestWrapper, adapterExtra, auc, bidResponseExt, cacheInstructions.returnCreative, r.ImpExtInfoMap, r.PubID, errs, &seatNonBidBuilder)
 	bidResponse = adservertargeting.Apply(r.BidRequestWrapper, r.ResolvedBidRequest, bidResponse, r.QueryParams, bidResponseExt, r.Account.TruncateTargetAttribute)
 	bidResponse = bidadjustment.ApplyFixedPrice(r.BidRequestWrapper, bidResponse)
+	bidResponse = bidadjustment.StoreToRedis(r.BidRequestWrapper, bidResponse)
 	bidResponse = bidadjustment.CleanBidExtensions(bidResponse)
 
 	bidResponse.Ext, err = encodeBidResponseExt(bidResponseExt)
