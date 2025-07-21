@@ -8,7 +8,7 @@ import (
 
 // Client represents a Redis client
 type Client struct {
-	rdb *redis.Client
+	rdb redis.UniversalClient
 }
 
 // NewClient creates a new Redis client
@@ -17,6 +17,18 @@ func NewClient(addr, password string, db int) *Client {
 		Addr:     addr,     // Redis server address, e.g., "localhost:6379"
 		Password: password, // Redis password, "" if no password
 		DB:       db,       // Redis database number
+	})
+
+	return &Client{
+		rdb: rdb,
+	}
+}
+
+// NewClusterClient creates a Redis cluster client
+func NewClusterClient(addrs []string, password string) *Client {
+	rdb := redis.NewClusterClient(&redis.ClusterOptions{
+		Addrs:    addrs,
+		Password: password,
 	})
 
 	return &Client{
