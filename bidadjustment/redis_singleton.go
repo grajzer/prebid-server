@@ -19,7 +19,7 @@ func GetRedisClient() *Client {
 		)
 
 		//Cluster name : ad-server-global
-		//redisClient := NewClient("ad-server-globalb.ay4fls.clustercfg.euc1.cache.amazonaws.com:6379	", "", 0)
+		//redisClient := NewClient("ad-server-globalb.ay4fls.clustercfg.euc1.cache.amazonaws.com:6379", "", 0)
 
 		//Cluster name : ad-server-uid
 		//redisClient := NewClient("ad-server-uid.ay4fls.clustercfg.euc1.cache.amazonaws.com:6379", "", 0)

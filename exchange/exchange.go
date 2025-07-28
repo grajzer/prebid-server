@@ -562,6 +562,10 @@ func (e *exchange) HoldAuction(ctx context.Context, r *AuctionRequest, debugLog 
 	}
 	bidResponseExt = setSeatNonBid(bidResponseExt, seatNonBidBuilder)
 
+	if !responseDebugAllow {
+		bidResponse.Ext = nil
+	}
+
 	return &AuctionResponse{
 		BidResponse:    bidResponse,
 		ExtBidResponse: bidResponseExt,

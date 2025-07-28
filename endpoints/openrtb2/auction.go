@@ -293,10 +293,13 @@ func (deps *endpointDeps) Auction(w http.ResponseWriter, r *http.Request, _ http
 		return
 	}
 
-	err = setSeatNonBidRaw(req, auctionResponse)
-	if err != nil {
-		glog.Errorf("Error setting seat non-bid: %v", err)
+	if auctionResponse.BidResponse.Ext != nil {
+		err = setSeatNonBidRaw(req, auctionResponse)
+		if err != nil {
+			glog.Errorf("Error setting seat non-bid: %v", err)
+		}
 	}
+
 	labels, ao = sendAuctionResponse(w, hookExecutor, response, req.BidRequest, account, labels, ao)
 }
 

@@ -60,22 +60,22 @@ func ApplyFixedPrice(r *openrtb_ext.RequestWrapper, response *openrtb2.BidRespon
 func StoreToRedis(r *openrtb_ext.RequestWrapper, response *openrtb2.BidResponse) *openrtb2.BidResponse {
 
 	//fmt.Println("\nRequest Domain:", r.Site.Domain)
-	//var domain = ""
-	//var placementId = ""
-	//var storedRequest = getExtJSON(r).Prebid.StoredRequest
-	//
-	//var winningBidIdx = -1
-	//var winningPrice float64 = 0
-	//
-	//for field, val := range storedRequest {
-	//	if field == "id" {
-	//		placementId = val
-	//	}
-	//}
-	//
-	//if r.Site.Domain != "" {
-	//	domain = r.Site.Domain
-	//}
+	var domain = ""
+	var placementId = ""
+	var storedRequest = getExtJSON(r).Prebid.StoredRequest
+
+	var winningBidIdx = -1
+	var winningPrice float64 = 0
+
+	for field, val := range storedRequest {
+		if field == "id" {
+			placementId = val
+		}
+	}
+
+	if r.Site.Domain != "" {
+		domain = r.Site.Domain
+	}
 
 	//err := PrintJSONIndented(response)
 	//if err != nil {
@@ -88,29 +88,29 @@ func StoreToRedis(r *openrtb_ext.RequestWrapper, response *openrtb2.BidResponse)
 	if len(response.SeatBid) > 0 {
 
 		jsonSeatBid, _ := GetJSONIndented(response.SeatBid)
-		redisKey, _ := addToRedis(jsonSeatBid)
-		redisKey = redisKey + ""
-		//if errRedis == nil {
-		//	for i, seatBid := range response.SeatBid {
-		//		for _, bid := range seatBid.Bid {
-		//			if (bid.Price) > winningPrice {
-		//				winningPrice = bid.Price
-		//				winningBidIdx = i
-		//			}
-		//		}
-		//	}
-		//
-		//	if winningBidIdx > -1 {
-		//		response.SeatBid = response.SeatBid[winningBidIdx : winningBidIdx+1]
-		//		response.SeatBid[0].Bid[0].AdM = "<VAST version=\"3.0\">\n<Ad>\n <Wrapper>\n   <AdSystem>TargetVideo wrapper</AdSystem>\n   <VASTAdTagURI><![CDATA[https://vid.tvserve.io/ads/bid?iu=/2/target-video/" + domain + "&bid_hash=" + redisKey + "&placement_id=" + placementId + "]]></VASTAdTagURI>\n   <Creatives></Creatives>\n </Wrapper>\n</Ad>\n</VAST>"
-		//		response.SeatBid[0].Bid[0].NURL = "https://vid.tvserve.io/ads/bid?iu=/2/target-video/" + domain + "&bid_hash=" + redisKey + "&placement_id=" + placementId
-		//		response.SeatBid[0].Bid[0].DealID = ""
-		//		response.SeatBid[0].Bid[0].CID = ""
-		//		//response.SeatBid[0].Bid[0].CrID = ""
-		//		response.SeatBid[0].Seat = "targetVideo"
-		//		//response.SeatBid[0].Bid[0].Ext = nil
-		//	}
-		//}
+		redisKey, errRedis := addToRedis(jsonSeatBid)
+		//redisKey = redisKey + ""
+		if errRedis == nil {
+			for i, seatBid := range response.SeatBid {
+				for _, bid := range seatBid.Bid {
+					if (bid.Price) > winningPrice {
+						winningPrice = bid.Price
+						winningBidIdx = i
+					}
+				}
+			}
+
+			if winningBidIdx > -1 {
+				response.SeatBid = response.SeatBid[winningBidIdx : winningBidIdx+1]
+				response.SeatBid[0].Bid[0].AdM = "<VAST version=\"3.0\">\n<Ad>\n <Wrapper>\n   <AdSystem>TargetVideo wrapper</AdSystem>\n   <VASTAdTagURI><![CDATA[https://vid.tvserve.io/ads/bid?iu=/2/target-video/" + domain + "&bid_hash=" + redisKey + "&placement_id=" + placementId + "]]></VASTAdTagURI>\n   <Creatives></Creatives>\n </Wrapper>\n</Ad>\n</VAST>"
+				response.SeatBid[0].Bid[0].NURL = "https://vid.tvserve.io/ads/bid?iu=/2/target-video/" + domain + "&bid_hash=" + redisKey + "&placement_id=" + placementId
+				response.SeatBid[0].Bid[0].DealID = ""
+				response.SeatBid[0].Bid[0].CID = ""
+				//response.SeatBid[0].Bid[0].CrID = ""
+				response.SeatBid[0].Seat = "targetVideo"
+				//response.SeatBid[0].Bid[0].Ext = nil
+			}
+		}
 
 	}
 
