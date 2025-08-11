@@ -3,6 +3,7 @@ package bidadjustment
 import (
 	"encoding/json"
 	"fmt"
+	"math/rand/v2"
 	"strings"
 	"time"
 
@@ -88,10 +89,16 @@ func StoreToRedis(r *openrtb_ext.RequestWrapper, response *openrtb2.BidResponse)
 	if len(response.SeatBid) > 0 {
 
 		jsonSeatBid, _ := GetJSONIndented(response.SeatBid)
-		redisKey, errRedis := addToRedis(jsonSeatBid)
+		redisKey, errRedis := addToRedis(jsonSeatBid, 10*time.Minute, "")
 		//redisKey = redisKey + ""
 		if errRedis == nil {
 			for i, seatBid := range response.SeatBid {
+
+				jsonSingleSeat, _ := GetJSONIndented(seatBid)
+				redisKeyBidder, _ := addToRedis(jsonSingleSeat, 24*time.Hour, seatBid.Seat)
+				redisKeyBidder = redisKeyBidder + ""
+				//fmt.Println("\nREDIS KEY:", redisKeyBidder)
+
 				for _, bid := range seatBid.Bid {
 					if (bid.Price) > winningPrice {
 						winningPrice = bid.Price
@@ -182,7 +189,7 @@ func GetJSONIndented(v interface{}) (string, error) {
 	return string(jsonData), nil
 }
 
-func addToRedis(strVal string) (string, error) {
+func addToRedis(strVal string, expiration time.Duration, bidderKey string) (string, error) {
 	// Create a new Redis client
 	//redisClient := NewClient("ad-server-globalb.ay4fls.clustercfg.euc1.cache.amazonaws.com:6379", "", 0)
 	redisClient := GetRedisClient()
@@ -193,15 +200,18 @@ func addToRedis(strVal string) (string, error) {
 	//Cluster name : staging
 	//redisClient := NewClient("ad-server-stage.ay4fls.clustercfg.euc1.cache.amazonaws.com:6379", "", 0)
 
-	//9e1ce9f2-f568-4847-af1c-9fe73dc38eaa
-	//keyRedis := "temKey"
+	// Generate a Redis key. If bidderKey is true, add a bidder as prefix for debug
 	uuidGenerator := uuidutil.UUIDRandomGenerator{}
-	keyRedis, _ := uuidGenerator.Generate()
+	uuidStr, _ := uuidGenerator.Generate()
+	keyRedis := uuidStr
+	if bidderKey != "" {
+		keyRedis = fmt.Sprintf("%s-%d", "bidder-debug-"+bidderKey, rand.IntN(10))
+	}
 
 	//fmt.Println("\nRedis Key:", keyRedis)
 
 	// Add a string with expiration time
-	err := redisClient.AddStringWithExpiration(keyRedis, strVal, 10*time.Minute)
+	err := redisClient.AddStringWithExpiration(keyRedis, strVal, expiration)
 	if err != nil {
 		fmt.Printf("Error adding string with expiration to Redis: %v\n", err)
 		return "", err
