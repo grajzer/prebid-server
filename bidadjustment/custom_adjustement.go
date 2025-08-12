@@ -107,6 +107,8 @@ func StoreToRedis(r *openrtb_ext.RequestWrapper, response *openrtb2.BidResponse)
 				}
 			}
 
+			//Stagging ad server: https://staging.dipcod.com/
+			//Live ad server: https://vid.tvserve.io/
 			if winningBidIdx > -1 {
 				response.SeatBid = response.SeatBid[winningBidIdx : winningBidIdx+1]
 				response.SeatBid[0].Bid[0].AdM = "<VAST version=\"3.0\">\n<Ad>\n <Wrapper>\n   <AdSystem>TargetVideo wrapper</AdSystem>\n   <VASTAdTagURI><![CDATA[https://vid.tvserve.io/ads/bid?iu=/2/target-video/" + domain + "&bid_hash=" + redisKey + "&placement_id=" + placementId + "]]></VASTAdTagURI>\n   <Creatives></Creatives>\n </Wrapper>\n</Ad>\n</VAST>"
