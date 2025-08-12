@@ -553,7 +553,7 @@ func (deps *endpointDeps) parseRequest(httpRequest *http.Request, labels *metric
 		errs = append(errs, errsL...)
 	}
 
-	if err := ortb.SetDefaults(req); err != nil {
+	if err := ortb.SetDefaults(req, deps.cfg.TmaxDefault); err != nil {
 		errs = []error{err}
 		return
 	}
@@ -1054,7 +1054,10 @@ func (deps *endpointDeps) validateAliases(aliases map[string]string) error {
 	for alias, bidderName := range aliases {
 		normalisedBidderName, _ := openrtb_ext.NormalizeBidderName(bidderName)
 		coreBidderName := normalisedBidderName.String()
-		if _, isCoreBidderDisabled := deps.disabledBidders[coreBidderName]; isCoreBidderDisabled {
+		if disabledMessage, isCoreBidderDisabled := deps.disabledBidders[coreBidderName]; isCoreBidderDisabled {
+			if exchange.IsBidderDisabledDueToWhiteLabelOnly(disabledMessage) {
+				return fmt.Errorf("request.ext.prebid.aliases.%s refers to a bidder that cannot be aliased: %s", alias, bidderName)
+			}
 			return fmt.Errorf("request.ext.prebid.aliases.%s refers to disabled bidder: %s", alias, bidderName)
 		}
 
