@@ -989,7 +989,7 @@ func SetupViper(v *viper.Viper, filename string, bidderInfos BidderInfos) {
 	v.SetDefault("category_mapping.filesystem.enabled", true)
 	v.SetDefault("category_mapping.filesystem.directorypath", "./static/category-mapping")
 	v.SetDefault("category_mapping.http.endpoint", "")
-	v.SetDefault("stored_requests_timeout_ms", 50)
+	v.SetDefault("stored_requests_timeout_ms", 100)
 	v.SetDefault("stored_requests.database.connection.driver", "")
 	v.SetDefault("stored_requests.database.connection.dbname", "")
 	v.SetDefault("stored_requests.database.connection.host", "")
