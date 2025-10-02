@@ -234,6 +234,7 @@ type BidderRequest struct {
 	BidderLabels          metrics.AdapterLabels
 	BidderStoredResponses map[string]json.RawMessage
 	IsRequestAlias        bool
+	ForcePlcmt            bool
 	ImpReplaceImpId       map[string]bool
 }
 

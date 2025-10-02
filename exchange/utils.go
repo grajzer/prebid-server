@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"strings"
 
+	"github.com/buger/jsonparser"
 	"github.com/prebid/go-gdpr/vendorconsent"
 	gpplib "github.com/prebid/go-gpp"
 	gppConstants "github.com/prebid/go-gpp/constants"
@@ -67,6 +68,11 @@ func (rs *requestSplitter) cleanOpenRTBRequests(ctx context.Context,
 	if err := PreloadExts(req); err != nil {
 		return
 	}
+
+	forcePlcmt, _ := jsonparser.GetBoolean(req.Imp[0].Ext, "prebid", "force_plcmt")
+	/*if errF == nil {
+		fmt.Println("\nFORCE PLACEMENT", forcePlcmt)
+	}*/
 
 	requestAliases, requestAliasesGVLIDs, errs := getRequestAliases(req)
 	if len(errs) > 0 {
@@ -259,6 +265,7 @@ func (rs *requestSplitter) cleanOpenRTBRequests(ctx context.Context,
 			BidderStoredResponses: bidderImpWithBidResp[openrtb_ext.BidderName(bidder)],
 			ImpReplaceImpId:       auctionReq.BidderImpReplaceImpID[bidder],
 			BidderLabels:          bidderLabels,
+			ForcePlcmt:            forcePlcmt,
 		}
 		bidderRequests = append(bidderRequests, bidderRequest)
 	}

@@ -192,6 +192,10 @@ func (bidder *BidderAdapter) requestBid(ctx context.Context, bidderRequest Bidde
 	// rebuild request after modules execution
 	request.RebuildRequest()
 	bidderRequest.BidRequest = request.BidRequest
+	
+	if bidderRequest.BidRequest.Imp[0].Video != nil && bidderRequest.ForcePlcmt {
+		bidderRequest.BidRequest.Imp[0].Video.Plcmt = 1
+	}
 
 	//check if real request exists for this bidder or it only has stored responses
 	dataLen := 0

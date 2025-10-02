@@ -18,6 +18,7 @@ type ExtRequest struct {
 
 type ExtRequestPrebid struct {
 	BidAdjustmentFactors map[string]float64         `json:"bidadjustmentfactors,omitempty"`
+	BidderFixedPrice     map[string]float64         `json:"bidderfixedprice,omitempty"`
 	BidFixedPrice        float64                    `json:"bidfixedprice,omitempty"`
 	BidderDebug          bool                       `json:"debug,omitempty"`
 	Bidder               map[string]json.RawMessage `json:"bidder,omitempty"`
@@ -38,6 +39,8 @@ func getExtJSON(r *openrtb_ext.RequestWrapper) ExtRequest {
 
 func ApplyFixedPrice(r *openrtb_ext.RequestWrapper, response *openrtb2.BidResponse) *openrtb2.BidResponse {
 	var bidFixedPrice = getExtJSON(r).Prebid.BidFixedPrice
+	var bidderFixedPrice = getExtJSON(r).Prebid.BidderFixedPrice
+	var bidAdjustmentFactors = getExtJSON(r).Prebid.BidAdjustmentFactors
 	var winningBidIdx = -1
 	var winningPrice float64 = 0
 
@@ -52,9 +55,27 @@ func ApplyFixedPrice(r *openrtb_ext.RequestWrapper, response *openrtb2.BidRespon
 		}
 		if winningBidIdx > -1 {
 			response.SeatBid = response.SeatBid[winningBidIdx : winningBidIdx+1]
-			response.SeatBid[0].Bid[0].Price = bidFixedPrice
+			_, bidderInAdjFactor := bidAdjustmentFactors[response.SeatBid[0].Seat]
+			//IF THERE IS NO BID ADJUSTMENT OVERRIDE
+			if !bidderInAdjFactor {
+				response.SeatBid[0].Bid[0].Price = bidFixedPrice
+			}
+
 		}
 	}
+
+	if len(bidderFixedPrice) > 0 {
+		for bidder, bidderPrice := range bidderFixedPrice {
+			//fmt.Println("\nApply Bidder Fixed Price bidder: ", bidder)
+			//fmt.Println("\nApply Bidder Fixed Price bidder price: ", bidderPrice)
+			for i, _ := range response.SeatBid {
+				if response.SeatBid[i].Seat == bidder {
+					response.SeatBid[i].Bid[0].Price = bidderPrice
+				}
+			}
+		}
+	}
+
 	return response
 }
 
