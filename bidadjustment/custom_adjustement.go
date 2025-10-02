@@ -18,6 +18,7 @@ type ExtRequest struct {
 
 type ExtRequestPrebid struct {
 	BidAdjustmentFactors map[string]float64         `json:"bidadjustmentfactors,omitempty"`
+	BidderFixedPrice     map[string]float64         `json:"bidderfixedprice,omitempty"`
 	BidFixedPrice        float64                    `json:"bidfixedprice,omitempty"`
 	BidderDebug          bool                       `json:"debug,omitempty"`
 	Bidder               map[string]json.RawMessage `json:"bidder,omitempty"`
@@ -38,6 +39,8 @@ func getExtJSON(r *openrtb_ext.RequestWrapper) ExtRequest {
 
 func ApplyFixedPrice(r *openrtb_ext.RequestWrapper, response *openrtb2.BidResponse) *openrtb2.BidResponse {
 	var bidFixedPrice = getExtJSON(r).Prebid.BidFixedPrice
+	var bidderFixedPrice = getExtJSON(r).Prebid.BidderFixedPrice
+	var bidAdjustmentFactors = getExtJSON(r).Prebid.BidAdjustmentFactors
 	var winningBidIdx = -1
 	var winningPrice float64 = 0
 
@@ -52,9 +55,27 @@ func ApplyFixedPrice(r *openrtb_ext.RequestWrapper, response *openrtb2.BidRespon
 		}
 		if winningBidIdx > -1 {
 			response.SeatBid = response.SeatBid[winningBidIdx : winningBidIdx+1]
-			response.SeatBid[0].Bid[0].Price = bidFixedPrice
+			_, bidderInAdjFactor := bidAdjustmentFactors[response.SeatBid[0].Seat]
+			//IF THERE IS NO BID ADJUSTMENT OVERRIDE
+			if !bidderInAdjFactor {
+				response.SeatBid[0].Bid[0].Price = bidFixedPrice
+			}
+
 		}
 	}
+
+	if len(bidderFixedPrice) > 0 {
+		for bidder, bidderPrice := range bidderFixedPrice {
+			//fmt.Println("\nApply Bidder Fixed Price bidder: ", bidder)
+			//fmt.Println("\nApply Bidder Fixed Price bidder price: ", bidderPrice)
+			for i, _ := range response.SeatBid {
+				if response.SeatBid[i].Seat == bidder {
+					response.SeatBid[i].Bid[0].Price = bidderPrice
+				}
+			}
+		}
+	}
+
 	return response
 }
 
@@ -74,8 +95,8 @@ func StoreToRedis(r *openrtb_ext.RequestWrapper, response *openrtb2.BidResponse)
 		}
 	}
 
-	if r.Site.Domain != "" {
-		domain = r.Site.Domain
+	if r.Site.Page != "" {
+		domain = r.Site.Page
 	}
 
 	//err := PrintJSONIndented(response)
@@ -108,13 +129,23 @@ func StoreToRedis(r *openrtb_ext.RequestWrapper, response *openrtb2.BidResponse)
 			}
 
 			//Stagging ad server: https://staging.dipcod.com/
-			//Live ad server URL: https://vid.tvserve.io/
+			//Live ad server URL: https://vid.tvserve.io/server/bid?u=2&bid_hash=HASH&placement_id=" + placementId&d=domain
+			//https://staging.dipcod.com/server/bid?u=1&placement_id=2&bid_hash=
 			if winningBidIdx > -1 {
 				response.SeatBid = response.SeatBid[winningBidIdx : winningBidIdx+1]
-				response.SeatBid[0].Bid[0].AdM = "<VAST version=\"3.0\">\n<Ad>\n <Wrapper>\n   <AdSystem>TargetVideo wrapper</AdSystem>\n   <VASTAdTagURI><![CDATA[https://vid.tvserve.io/ads/bid?iu=/2/target-video/" + domain + "&bid_hash=" + redisKey + "&placement_id=" + placementId + "]]></VASTAdTagURI>\n   <Creatives></Creatives>\n </Wrapper>\n</Ad>\n</VAST>"
-				response.SeatBid[0].Bid[0].NURL = "https://vid.tvserve.io/ads/bid?iu=/2/target-video/" + domain + "&bid_hash=" + redisKey + "&placement_id=" + placementId
+				//response.SeatBid[0].Bid[0].AdM = "<VAST version=\"3.0\">\n<Ad>\n <Wrapper>\n   <AdSystem>TargetVideo wrapper</AdSystem>\n   <VASTAdTagURI><![CDATA[https://vid.tvserve.io/ads/bid?iu=/2/target-video/" + domain + "&bid_hash=" + redisKey + "&placement_id=" + placementId + "]]></VASTAdTagURI>\n   <Creatives></Creatives>\n </Wrapper>\n</Ad>\n</VAST>"
+				//response.SeatBid[0].Bid[0].AdM = "<VAST version=\"3.0\">\n<Ad>\n <Wrapper>\n   <AdSystem>TargetVideo wrapper</AdSystem>\n   <VASTAdTagURI><![CDATA[https://staging.dipcod.com/server/bid?u=1&bid_hash=" + redisKey + "&placement_id=2]]></VASTAdTagURI>\n   <Creatives></Creatives>\n </Wrapper>\n</Ad>\n</VAST>"
+				response.SeatBid[0].Bid[0].AdM = "<VAST version=\"3.0\">\n<Ad>\n <Wrapper>\n   <AdSystem>TargetVideo wrapper</AdSystem>\n   <VASTAdTagURI><![CDATA[https://vid.tvserve.io/server/bid?u=2&bid_hash=" + redisKey + "&placement_id=" + placementId + "&page_url=" + domain + "]]></VASTAdTagURI>\n   <Creatives></Creatives>\n </Wrapper>\n</Ad>\n</VAST>"
+
+				//response.SeatBid[0].Bid[0].NURL = "https://vid.tvserve.io/ads/bid?iu=/2/target-video/" + domain + "&bid_hash=" + redisKey + "&placement_id=" + placementId
+				//response.SeatBid[0].Bid[0].NURL = "https://staging.dipcod.com/server/bid?u=1&&bid_hash=" + redisKey + "&placement_id=2"
+				response.SeatBid[0].Bid[0].NURL = "https://vid.tvserve.io/server/bid?u=2&bid_hash=" + redisKey + "&placement_id=" + placementId + "&page_url=" + domain
 				response.SeatBid[0].Bid[0].DealID = ""
 				response.SeatBid[0].Bid[0].CID = ""
+				//if placementId == "807" {
+				//	response.SeatBid[0].Bid[0].Ext = nil
+				//	response.SeatBid[0].Bid[0].ADomain = nil
+				//}
 				//response.SeatBid[0].Bid[0].CrID = ""
 				response.SeatBid[0].Seat = "targetVideo"
 				//response.SeatBid[0].Bid[0].Ext = nil

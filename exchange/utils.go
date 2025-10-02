@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"strings"
 
+	"github.com/buger/jsonparser"
 	"github.com/prebid/go-gdpr/vendorconsent"
 	gpplib "github.com/prebid/go-gpp"
 	gppConstants "github.com/prebid/go-gpp/constants"
@@ -67,6 +68,11 @@ func (rs *requestSplitter) cleanOpenRTBRequests(ctx context.Context,
 	if err := PreloadExts(req); err != nil {
 		return
 	}
+
+	forcePlcmt, _ := jsonparser.GetBoolean(req.Imp[0].Ext, "prebid", "force_plcmt")
+	/*if errF == nil {
+		fmt.Println("\nFORCE PLACEMENT", forcePlcmt)
+	}*/
 
 	requestAliases, requestAliasesGVLIDs, errs := getRequestAliases(req)
 	if len(errs) > 0 {
@@ -259,6 +265,7 @@ func (rs *requestSplitter) cleanOpenRTBRequests(ctx context.Context,
 			BidderStoredResponses: bidderImpWithBidResp[openrtb_ext.BidderName(bidder)],
 			ImpReplaceImpId:       auctionReq.BidderImpReplaceImpID[bidder],
 			BidderLabels:          bidderLabels,
+			ForcePlcmt:            forcePlcmt,
 		}
 		bidderRequests = append(bidderRequests, bidderRequest)
 	}
@@ -925,8 +932,9 @@ func getExtCacheInstructions(requestExtPrebid *openrtb_ext.ExtRequestPrebid) ext
 	return cacheInstructions
 }
 
-func getExtTargetData(requestExtPrebid *openrtb_ext.ExtRequestPrebid, cacheInstructions extCacheInstructions) *targetData {
+func getExtTargetData(requestExtPrebid *openrtb_ext.ExtRequestPrebid, cacheInstructions extCacheInstructions, account config.Account) (*targetData, []*errortypes.Warning) {
 	if requestExtPrebid != nil && requestExtPrebid.Targeting != nil {
+		prefix, warning := getTargetDataPrefix(requestExtPrebid.Targeting.Prefix, account)
 		return &targetData{
 			alwaysIncludeDeals:        requestExtPrebid.Targeting.AlwaysIncludeDeals,
 			includeBidderKeys:         ptrutil.ValueOrDefault(requestExtPrebid.Targeting.IncludeBidderKeys),
@@ -937,10 +945,49 @@ func getExtTargetData(requestExtPrebid *openrtb_ext.ExtRequestPrebid, cacheInstr
 			mediaTypePriceGranularity: ptrutil.ValueOrDefault(requestExtPrebid.Targeting.MediaTypePriceGranularity),
 			preferDeals:               requestExtPrebid.Targeting.PreferDeals,
 			priceGranularity:          ptrutil.ValueOrDefault(requestExtPrebid.Targeting.PriceGranularity),
+			prefix:                    prefix,
+		}, warning
+	}
+
+	return nil, nil
+}
+
+func getTargetDataPrefix(requestPrefix string, account config.Account) (string, []*errortypes.Warning) {
+	var warnings []*errortypes.Warning
+
+	maxLength := MaxKeyLength
+	if account.TruncateTargetAttribute != nil {
+		if *account.TruncateTargetAttribute > MinKeyLength {
+			maxLength = *account.TruncateTargetAttribute
+		}
+
+		if *account.TruncateTargetAttribute < MinKeyLength {
+			warnings = append(warnings, &errortypes.Warning{
+				WarningCode: errortypes.TooShortTargetingPrefixWarningCode,
+				Message:     "targeting prefix is shorter than 'MinKeyLength' value: increase prefix length",
+			})
+			return DefaultKeyPrefix, warnings
 		}
 	}
 
-	return nil
+	maxLength -= MinKeyLength
+	result := DefaultKeyPrefix
+
+	if requestPrefix != "" {
+		result = requestPrefix
+	} else if account.TargetingPrefix != "" {
+		result = account.TargetingPrefix
+	}
+
+	if len(result) > maxLength {
+		warnings = append(warnings, &errortypes.Warning{
+			WarningCode: errortypes.TooLongTargetingPrefixWarningCode,
+			Message:     "targeting prefix combined with key attribute is longer than 'settings.targeting.truncate-attr-chars' value: decrease prefix length or increase truncate-attr-chars",
+		})
+		return DefaultKeyPrefix, warnings
+	}
+
+	return result, warnings
 }
 
 // getDebugInfo returns the boolean flags that allow for debug information in bidResponse.Ext, the SeatBid.httpcalls slice, and
