@@ -52,6 +52,14 @@ type requestSplitter struct {
 	requestValidator  ortb.RequestValidator
 }
 
+type extPrebid struct {
+	Schain json.RawMessage `json:"schain"`
+}
+
+type extRoot struct {
+	Prebid extPrebid `json:"prebid"`
+}
+
 // cleanOpenRTBRequests splits the input request into requests which are sanitized for each bidder. Intended behavior is:
 //
 //  1. BidRequest.Imp[].Ext will only contain the "prebid" field and a "bidder" field which has the params for the intended Bidder.
@@ -73,6 +81,13 @@ func (rs *requestSplitter) cleanOpenRTBRequests(ctx context.Context,
 	/*if errF == nil {
 		fmt.Println("\nFORCE PLACEMENT", forcePlcmt)
 	}*/
+
+	prebidSchain, errSchain := extractSchainWithStdlib(req.Imp[0].Ext)
+	if errSchain != nil {
+		//fmt.Println(errSchain)
+	}
+	//fmt.Println("prebidSchain", prebidSchain)
+	//fmt.Printf("struct1: %+v\n", prebidSchain)
 
 	requestAliases, requestAliasesGVLIDs, errs := getRequestAliases(req)
 	if len(errs) > 0 {
@@ -266,11 +281,40 @@ func (rs *requestSplitter) cleanOpenRTBRequests(ctx context.Context,
 			ImpReplaceImpId:       auctionReq.BidderImpReplaceImpID[bidder],
 			BidderLabels:          bidderLabels,
 			ForcePlcmt:            forcePlcmt,
+			SChain:                prebidSchain,
 		}
 		bidderRequests = append(bidderRequests, bidderRequest)
 	}
 
 	return
+}
+
+func extractSchainWithStdlib(ext json.RawMessage) (openrtb2.SupplyChain, error) {
+	var root extRoot
+	if err := json.Unmarshal(ext, &root); err != nil {
+		return openrtb2.SupplyChain{}, err
+	}
+	if len(root.Prebid.Schain) == 0 {
+		return openrtb2.SupplyChain{}, fmt.Errorf("prebid.schain is missing")
+	}
+
+	var sch openrtb2.SupplyChain
+	if err := json.Unmarshal(root.Prebid.Schain, &sch); err != nil {
+		return openrtb2.SupplyChain{}, err
+	}
+
+	// Filter out nodes with empty or whitespace-only ASI
+	if len(sch.Nodes) > 0 {
+		filtered := sch.Nodes[:0] // in-place filter to avoid extra allocs
+		for _, n := range sch.Nodes {
+			if strings.TrimSpace(n.ASI) != "" {
+				filtered = append(filtered, n)
+			}
+		}
+		sch.Nodes = filtered
+	}
+
+	return sch, nil
 }
 
 // fpdUserEIDExists determines if req fpd config had User.EIDs

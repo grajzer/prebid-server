@@ -184,6 +184,53 @@ func (bidder *BidderAdapter) requestBid(ctx context.Context, bidderRequest Bidde
 		return nil, extraBidderRespInfo{}, []error{reject}
 	}
 
+	//byteExt := []byte(`{"schain": {"complete": 1, "nodes": [{"asi": "target-video.com", "sid": "1002", "domain": "test_domain.com", "hp": 1}], "ver": "1.0"}}`)
+	//	{"ver":"1.0", "complete":1, "nodes":[{"asi":"target-video.com", "sid":"1002","domain":"einfachbacken.de","hp":1}]}
+
+	//jsonBSchain, _ := json.MarshalIndent(bidderRequest.BidRequest.Imp[0].Ext, "", "\t")
+	//fmt.Println("\nBidderRequest", bidderRequest.BidderName, string(jsonBSchain))
+
+	if request.Source.Ext == nil && request.Source.SChain == nil && bidderRequest.SChain.Ver != "" {
+		//if bidderRequest.SChain.Ver != "" {
+		//request.Source.Ext = []byte(`{"schain":` + string(bidderRequest.SChain) + `}`)
+		//request.Source.Ext = byteExt
+		request.Source.SChain = &bidderRequest.SChain
+		jsonDataX, _ := json.Marshal(request.Source.SChain)
+		request.Source.Ext = []byte(`{"schain":` + string(jsonDataX) + `}`)
+	} else if request.Source.Ext != nil && bidderRequest.SChain.Ver != "" {
+		var current openrtb2.SupplyChain
+		//var ext sourceExt
+
+		var extMap map[string]json.RawMessage
+		if len(request.Source.Ext) > 0 {
+			// Ignore errors here; if malformed, we’ll reconstruct a fresh map
+			_ = json.Unmarshal(request.Source.Ext, &extMap)
+		}
+
+		if raw, ok := extMap["schain"]; ok && len(raw) > 0 {
+			_ = json.Unmarshal(raw, &current)
+		}
+
+		// append nodes
+		if len(bidderRequest.SChain.Nodes) > 0 {
+			current.Nodes = append(current.Nodes, bidderRequest.SChain.Nodes...)
+		}
+		if b, err := json.Marshal(current); err == nil {
+			extMap["schain"] = b
+		}
+
+		// write back
+		//request.Source.SChain = &current
+		request.Source.Ext, _ = json.Marshal(extMap)
+	}
+
+	//jsonData, _ := json.MarshalIndent(request.Source.Ext, "", "\t")
+	//fmt.Println("\nExt", bidderRequest.BidderName, string(jsonData))
+	//fmt.Println("\n", bidderRequest.BidderName)
+	//jsonDataX, _ := json.MarshalIndent(request.Source.SChain, "", "\t")
+	//jsonDataX, _ := json.MarshalIndent(request.Source.SChain, "", "")
+	//fmt.Println("\nSChain", bidderRequest.BidderName, string(jsonDataX))
+
 	var (
 		reqData         []*adapters.RequestData
 		errs            []error
@@ -194,7 +241,7 @@ func (bidder *BidderAdapter) requestBid(ctx context.Context, bidderRequest Bidde
 	// rebuild request after modules execution
 	request.RebuildRequest()
 	bidderRequest.BidRequest = request.BidRequest
-	
+
 	if bidderRequest.BidRequest.Imp[0].Video != nil && bidderRequest.ForcePlcmt {
 		bidderRequest.BidRequest.Imp[0].Video.Plcmt = 1
 	}

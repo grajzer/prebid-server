@@ -235,6 +235,7 @@ type BidderRequest struct {
 	BidderStoredResponses map[string]json.RawMessage
 	IsRequestAlias        bool
 	ForcePlcmt            bool
+	SChain                openrtb2.SupplyChain
 	ImpReplaceImpId       map[string]bool
 }
 
