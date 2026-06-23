@@ -87,7 +87,7 @@ func (me *MetricsEngineMock) RecordAdapterBidReceived(labels AdapterLabels, bidT
 }
 
 // RecordAdapterPrice mock
-func (me *MetricsEngineMock) RecordAdapterPrice(labels AdapterLabels, cpm float64) {
+func (me *MetricsEngineMock) RecordAdapterPrice(labels AdapterLabels, cpm float64, storedImp string) {
 	me.Called(labels, cpm)
 }
 

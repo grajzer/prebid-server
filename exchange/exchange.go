@@ -192,6 +192,7 @@ type ImpExtInfo struct {
 	EchoVideoAttrs bool
 	StoredImp      []byte
 	Passthrough    json.RawMessage
+	ConfigID       string
 }
 
 // AuctionRequest holds the bid request for the auction
@@ -237,12 +238,20 @@ type BidderRequest struct {
 	ForcePlcmt            bool
 	SChain                openrtb2.SupplyChain
 	ImpReplaceImpId       map[string]bool
+	ImpIDToConfigID       map[string]string
 }
 
 func (e *exchange) HoldAuction(ctx context.Context, r *AuctionRequest, debugLog *DebugLog) (*AuctionResponse, error) {
 	if r == nil {
 		return nil, nil
 	}
+
+	/*fmt.Println("\n")
+	for i := 0; i < len(r.BidRequestWrapper.BidRequest.Imp); i++ {
+		//fmt.Printf("struct IMP: %#v\n", req.BidRequest.Imp[i])
+		fmt.Println("exchange.go, IMP.EXT", string(r.BidRequestWrapper.BidRequest.Imp[i].Ext))
+		fmt.Println("exchange.go, IMP.ID", r.BidRequestWrapper.BidRequest.Imp[i].ID)
+	}*/
 
 	if r.BidRequestWrapper.BidRequest.Cur == nil || len(r.BidRequestWrapper.BidRequest.Cur) == 0 {
 		r.BidRequestWrapper.BidRequest.Cur = []string{"EUR"}
@@ -254,6 +263,9 @@ func (e *exchange) HoldAuction(ctx context.Context, r *AuctionRequest, debugLog 
 	}
 
 	requestExt, err := r.BidRequestWrapper.GetRequestExt()
+	/*fmt.Println("\n")
+	fmt.Printf("struct requestExt: %+v\n", requestExt)
+	fmt.Println("\n")*/
 	if err != nil {
 		return nil, err
 	}
@@ -809,7 +821,11 @@ func (e *exchange) getAllBids(
 			brw.adapter = bidderRequest.BidderCoreName
 			// Defer basic metrics to insure we capture them after all the values have been set
 			defer func() {
-				e.me.RecordAdapterRequest(bidderRequest.BidderLabels, bidderRequest.BidRequest.Imp[0].ID)
+				storedImp := bidderRequest.BidRequest.Imp[0].ID
+				if configID, ok := bidderRequest.ImpIDToConfigID[storedImp]; ok && configID != "" {
+					storedImp = fmt.Sprintf("%s.%s", storedImp, configID)
+				}
+				e.me.RecordAdapterRequest(bidderRequest.BidderLabels, storedImp)
 			}()
 			start := time.Now()
 
@@ -857,7 +873,11 @@ func (e *exchange) getAllBids(
 				if seatBid != nil {
 					for _, bid := range seatBid.Bids {
 						var cpm = float64(bid.Bid.Price * 1000)
-						e.me.RecordAdapterPrice(bidderRequest.BidderLabels, cpm)
+						storedImp := bidderRequest.BidRequest.Imp[0].ID
+						if configID, ok := bidderRequest.ImpIDToConfigID[storedImp]; ok && configID != "" {
+							storedImp = fmt.Sprintf("%s.%s", storedImp, configID)
+						}
+						e.me.RecordAdapterPrice(bidderRequest.BidderLabels, cpm, storedImp)
 						e.me.RecordAdapterBidReceived(bidderRequest.BidderLabels, bid.BidType, bid.Bid.AdM != "")
 					}
 				}

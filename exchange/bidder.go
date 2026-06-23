@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"math/rand"
+	"math/rand/v2"
 	"net/http"
 	"net/http/httptrace"
 	"regexp"
@@ -190,14 +190,15 @@ func (bidder *BidderAdapter) requestBid(ctx context.Context, bidderRequest Bidde
 	//jsonBSchain, _ := json.MarshalIndent(bidderRequest.BidRequest.Imp[0].Ext, "", "\t")
 	//fmt.Println("\nBidderRequest", bidderRequest.BidderName, string(jsonBSchain))
 
-	if request.Source.Ext == nil && request.Source.SChain == nil && bidderRequest.SChain.Ver != "" {
+	if request.Source != nil && request.Source.Ext == nil && request.Source.SChain == nil && bidderRequest.SChain.Ver != "" {
 		//if bidderRequest.SChain.Ver != "" {
 		//request.Source.Ext = []byte(`{"schain":` + string(bidderRequest.SChain) + `}`)
 		//request.Source.Ext = byteExt
 		request.Source.SChain = &bidderRequest.SChain
 		jsonDataX, _ := json.Marshal(request.Source.SChain)
 		request.Source.Ext = []byte(`{"schain":` + string(jsonDataX) + `}`)
-	} else if request.Source.Ext != nil && bidderRequest.SChain.Ver != "" {
+		request.Source.SChain = nil
+	} else if request.Source != nil && request.Source.Ext != nil && bidderRequest.SChain.Ver != "" {
 		var current openrtb2.SupplyChain
 		//var ext sourceExt
 
@@ -226,7 +227,7 @@ func (bidder *BidderAdapter) requestBid(ctx context.Context, bidderRequest Bidde
 
 	//jsonData, _ := json.MarshalIndent(request.Source.Ext, "", "\t")
 	//fmt.Println("\nExt", bidderRequest.BidderName, string(jsonData))
-	//fmt.Println("\n", bidderRequest.BidderName)
+	//fmt.Println("bidder.go", bidderRequest.BidderName)
 	//jsonDataX, _ := json.MarshalIndent(request.Source.SChain, "", "\t")
 	//jsonDataX, _ := json.MarshalIndent(request.Source.SChain, "", "")
 	//fmt.Println("\nSChain", bidderRequest.BidderName, string(jsonDataX))
@@ -621,6 +622,15 @@ func makeExt(httpInfo *httpCallInfo) *openrtb_ext.ExtHttpCall {
 // Bidder interface.
 func (bidder *BidderAdapter) doRequest(ctx context.Context, req *adapters.RequestData, bidderRequestStartTime time.Time, tmaxAdjustments *TmaxAdjustmentsPreprocessed) *httpCallInfo {
 	if bidder.shouldRequest() {
+		jsonData, err := json.MarshalIndent(req, "", "\t")
+		if err != nil {
+			fmt.Println("Error marshalling request:", err)
+		} else {
+			bidadjustment.WriteToRedis(
+				string(jsonData),
+				10*time.Minute,
+				fmt.Sprintf("%s-%d", "bidder-debug-"+bidder.BidderName.String()+"-request", rand.IntN(10)))
+		}
 		return bidder.doRequestImpl(ctx, req, glog.Warningf, bidderRequestStartTime, tmaxAdjustments)
 	}
 	return &httpCallInfo{

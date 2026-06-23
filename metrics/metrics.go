@@ -477,7 +477,7 @@ type MetricsEngine interface {
 	RecordBidderServerResponseTime(bidderServerResponseTime time.Duration)
 	RecordAdapterPanic(labels AdapterLabels)
 	RecordAdapterBidReceived(labels AdapterLabels, bidType openrtb_ext.BidType, hasAdm bool)
-	RecordAdapterPrice(labels AdapterLabels, cpm float64)
+	RecordAdapterPrice(labels AdapterLabels, cpm float64, storedImp string)
 	RecordAdapterTime(labels AdapterLabels, length time.Duration)
 	RecordCookieSync(status CookieSyncStatus)
 	RecordSyncerRequest(key string, status SyncerCookieSyncStatus)

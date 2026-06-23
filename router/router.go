@@ -290,6 +290,9 @@ func New(cfg *config.Configuration, rateConvertor *currency.RateConverter) (r *R
 	r.Handler("GET", "/version", endpoints.NewVersionEndpoint(version.Ver, version.Rev))
 	r.ServeFiles("/static/*filepath", http.Dir("static"))
 
+	// user sync redirect endpoint
+	r.GET("/user_sync", endpoints.NewUserSyncRedirectEndpoint())
+
 	// vtrack endpoint
 	if cfg.VTrack.Enabled {
 		vtrackEndpoint := events.NewVTrackEndpoint(cfg, accounts, cacheClient, cfg.BidderInfos, r.MetricsEngine)

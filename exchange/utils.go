@@ -272,6 +272,13 @@ func (rs *requestSplitter) cleanOpenRTBRequests(ctx context.Context,
 			bidderLabels.AdapterBids = metrics.AdapterBidPresent
 		}
 
+		impIDToConfigID := make(map[string]string)
+		for _, imp := range reqWrapperCopy.Imp {
+			if info, ok := auctionReq.ImpExtInfoMap[imp.ID]; ok && info.ConfigID != "" {
+				impIDToConfigID[imp.ID] = info.ConfigID
+			}
+		}
+
 		bidderRequest := BidderRequest{
 			BidderName:            openrtb_ext.BidderName(bidder),
 			BidderCoreName:        coreBidder,
@@ -282,6 +289,7 @@ func (rs *requestSplitter) cleanOpenRTBRequests(ctx context.Context,
 			BidderLabels:          bidderLabels,
 			ForcePlcmt:            forcePlcmt,
 			SChain:                prebidSchain,
+			ImpIDToConfigID:       impIDToConfigID,
 		}
 		bidderRequests = append(bidderRequests, bidderRequest)
 	}
