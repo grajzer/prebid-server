@@ -35,9 +35,11 @@ type Metrics struct {
 	TLSHandshakeTimer              metrics.Timer
 	BidderServerResponseTimer      metrics.Timer
 	StoredResponsesMeter           metrics.Meter
+	GvlListRequestsMeter           metrics.Meter
 
 	// Metrics for OpenRTB requests specifically
 	RequestStatuses       map[RequestType]map[RequestStatus]metrics.Meter
+	RequestSizeByEndpoint map[EndpointType]metrics.Histogram
 	AmpNoCookieMeter      metrics.Meter
 	CookieSyncMeter       metrics.Meter
 	CookieSyncStatusMeter map[CookieSyncStatus]metrics.Meter
@@ -99,6 +101,8 @@ type AdapterMetrics struct {
 	ConnCreated        metrics.Counter
 	ConnReused         metrics.Counter
 	ConnWaitTime       metrics.Timer
+	ConnDialErrors     metrics.Counter
+	ConnDialTime       metrics.Timer
 	BuyerUIDScrubbed   metrics.Meter
 	GDPRRequestBlocked metrics.Meter
 	ThrottledMeter     metrics.Meter
@@ -156,6 +160,7 @@ func NewBlankMetrics(registry metrics.Registry, exchanges []string, disabledMetr
 	newMetrics := &Metrics{
 		MetricsRegistry:                registry,
 		RequestStatuses:                make(map[RequestType]map[RequestStatus]metrics.Meter),
+		RequestSizeByEndpoint:          make(map[EndpointType]metrics.Histogram),
 		ConnectionCounter:              metrics.NilCounter{},
 		ConnectionAcceptErrorMeter:     blankMeter,
 		ConnectionCloseErrorMeter:      blankMeter,
@@ -182,6 +187,7 @@ func NewBlankMetrics(registry metrics.Registry, exchanges []string, disabledMetr
 		SetUidStatusMeter:              make(map[SetUidStatus]metrics.Meter),
 		SyncerSetsMeter:                make(map[string]map[SyncerSetUidStatus]metrics.Meter),
 		StoredResponsesMeter:           blankMeter,
+		GvlListRequestsMeter:           blankMeter,
 
 		ImpsTypeBanner: blankMeter,
 		ImpsTypeVideo:  blankMeter,
@@ -226,6 +232,12 @@ func NewBlankMetrics(registry metrics.Registry, exchanges []string, disabledMetr
 		newMetrics.RequestStatuses[t] = make(map[RequestStatus]metrics.Meter)
 		for _, s := range RequestStatuses() {
 			newMetrics.RequestStatuses[t][s] = blankMeter
+		}
+	}
+
+	for _, t := range EndpointTypes() {
+		if t != EndpointAmp {
+			newMetrics.RequestSizeByEndpoint[t] = &metrics.NilHistogram{}
 		}
 	}
 
@@ -287,10 +299,13 @@ func NewMetrics(registry metrics.Registry, exchanges []openrtb_ext.BidderName, d
 	newMetrics.ConnectionCloseErrorMeter = metrics.GetOrRegisterMeter("connection_close_errors", registry)
 	newMetrics.ImpMeter = metrics.GetOrRegisterMeter("imps_requested", registry)
 
-	newMetrics.ImpsTypeBanner = metrics.GetOrRegisterMeter("imp_banner", registry)
+	//newMetrics.ImpsTypeBanner = metrics.GetOrRegisterMeter("imp_banner", registry)
+	newMetrics.ImpsTypeBanner = &metrics.NilMeter{}
 	newMetrics.ImpsTypeVideo = metrics.GetOrRegisterMeter("imp_video", registry)
-	newMetrics.ImpsTypeAudio = metrics.GetOrRegisterMeter("imp_audio", registry)
-	newMetrics.ImpsTypeNative = metrics.GetOrRegisterMeter("imp_native", registry)
+	//newMetrics.ImpsTypeAudio = metrics.GetOrRegisterMeter("imp_audio", registry)
+	newMetrics.ImpsTypeAudio = &metrics.NilMeter{}
+	//newMetrics.ImpsTypeNative = metrics.GetOrRegisterMeter("imp_native", registry)
+	newMetrics.ImpsTypeNative = &metrics.NilMeter{}
 
 	newMetrics.NoCookieMeter = metrics.GetOrRegisterMeter("no_cookie_requests", registry)
 	newMetrics.AppRequestMeter = metrics.GetOrRegisterMeter("app_requests", registry)
@@ -301,6 +316,7 @@ func NewMetrics(registry metrics.Registry, exchanges []openrtb_ext.BidderName, d
 	newMetrics.PrebidCacheRequestTimerSuccess = metrics.GetOrRegisterTimer("prebid_cache_request_time.ok", registry)
 	newMetrics.PrebidCacheRequestTimerError = metrics.GetOrRegisterTimer("prebid_cache_request_time.err", registry)
 	newMetrics.StoredResponsesMeter = metrics.GetOrRegisterMeter("stored_responses", registry)
+	newMetrics.GvlListRequestsMeter = metrics.GetOrRegisterMeter("gvl_requests", registry)
 	newMetrics.OverheadTimer = makeOverheadTimerMetrics(registry)
 	newMetrics.BidderServerResponseTimer = metrics.GetOrRegisterTimer("bidder_server_response_time_seconds", registry)
 
@@ -347,6 +363,10 @@ func NewMetrics(registry metrics.Registry, exchanges []openrtb_ext.BidderName, d
 		for stat := range statusMap {
 			statusMap[stat] = metrics.GetOrRegisterMeter("requests."+string(stat)+"."+string(typ), registry)
 		}
+	}
+
+	for _, endpoint := range EndpointTypes() {
+		newMetrics.RequestSizeByEndpoint[endpoint] = metrics.GetOrRegisterHistogram("requests.size."+string(endpoint), registry, metrics.NewUniformSample(1024))
 	}
 
 	for _, cacheRes := range CacheResults() {
@@ -408,6 +428,8 @@ func makeBlankAdapterMetrics(disabledMetrics config.DisabledMetrics) *AdapterMet
 		newAdapter.ConnCreated = metrics.NilCounter{}
 		newAdapter.ConnReused = metrics.NilCounter{}
 		newAdapter.ConnWaitTime = &metrics.NilTimer{}
+		newAdapter.ConnDialErrors = metrics.NilCounter{}
+		newAdapter.ConnDialTime = &metrics.NilTimer{}
 	}
 	if !disabledMetrics.AdapterBuyerUIDScrubbed {
 		newAdapter.BuyerUIDScrubbed = blankMeter
@@ -475,14 +497,17 @@ func registerAdapterMetrics(registry metrics.Registry, adapterOrAccount string, 
 	am.RequestTimer = metrics.GetOrRegisterTimer(fmt.Sprintf("%[1]s.%[2]s.request_time", adapterOrAccount, exchange), registry)
 	am.PriceHistogram = metrics.GetOrRegisterHistogram(fmt.Sprintf("%[1]s.%[2]s.prices", adapterOrAccount, exchange), registry, metrics.NewExpDecaySample(1028, 0.015))
 	am.MarkupMetrics = map[openrtb_ext.BidType]*MarkupDeliveryMetrics{
-		openrtb_ext.BidTypeBanner: makeDeliveryMetrics(registry, adapterOrAccount+"."+exchange, openrtb_ext.BidTypeBanner),
-		openrtb_ext.BidTypeVideo:  makeDeliveryMetrics(registry, adapterOrAccount+"."+exchange, openrtb_ext.BidTypeVideo),
-		openrtb_ext.BidTypeAudio:  makeDeliveryMetrics(registry, adapterOrAccount+"."+exchange, openrtb_ext.BidTypeAudio),
-		openrtb_ext.BidTypeNative: makeDeliveryMetrics(registry, adapterOrAccount+"."+exchange, openrtb_ext.BidTypeNative),
+		//openrtb_ext.BidTypeBanner: makeDeliveryMetrics(registry, adapterOrAccount+"."+exchange, openrtb_ext.BidTypeBanner),
+		openrtb_ext.BidTypeVideo: makeDeliveryMetrics(registry, adapterOrAccount+"."+exchange, openrtb_ext.BidTypeVideo),
+		//openrtb_ext.BidTypeAudio:  makeDeliveryMetrics(registry, adapterOrAccount+"."+exchange, openrtb_ext.BidTypeAudio),
+		//openrtb_ext.BidTypeNative: makeDeliveryMetrics(registry, adapterOrAccount+"."+exchange, openrtb_ext.BidTypeNative),
 	}
 	am.ConnCreated = metrics.GetOrRegisterCounter(fmt.Sprintf("%[1]s.%[2]s.connections_created", adapterOrAccount, exchange), registry)
 	am.ConnReused = metrics.GetOrRegisterCounter(fmt.Sprintf("%[1]s.%[2]s.connections_reused", adapterOrAccount, exchange), registry)
 	am.ConnWaitTime = metrics.GetOrRegisterTimer(fmt.Sprintf("%[1]s.%[2]s.connection_wait_time", adapterOrAccount, exchange), registry)
+	am.ConnDialErrors = metrics.GetOrRegisterCounter(fmt.Sprintf("%[1]s.%[2]s.connection_dial_err", adapterOrAccount, exchange), registry)
+	am.ConnDialTime = metrics.GetOrRegisterTimer(fmt.Sprintf("%[1]s.%[2]s.connection_dial_time", adapterOrAccount, exchange), registry)
+
 	for err := range am.ErrorMeters {
 		am.ErrorMeters[err] = metrics.GetOrRegisterMeter(fmt.Sprintf("%s.%s.requests.%s", adapterOrAccount, exchange, err), registry)
 	}
@@ -556,10 +581,11 @@ func (me *Metrics) getAccountMetrics(id string) *accountMetrics {
 		return am
 	}
 	am = &accountMetrics{}
-	am.requestMeter = metrics.GetOrRegisterMeter(fmt.Sprintf("account.%s.requests", id), me.MetricsRegistry)
-	am.debugRequestMeter = metrics.GetOrRegisterMeter(fmt.Sprintf("account.%s.debug_requests", id), me.MetricsRegistry)
-	am.bidsReceivedMeter = metrics.GetOrRegisterMeter(fmt.Sprintf("account.%s.bids_received", id), me.MetricsRegistry)
-	am.priceHistogram = metrics.GetOrRegisterHistogram(fmt.Sprintf("account.%s.prices", id), me.MetricsRegistry, metrics.NewExpDecaySample(1028, 0.015))
+	//Disable account metrics
+	//am.requestMeter = metrics.GetOrRegisterMeter(fmt.Sprintf("account.%s.requests", id), me.MetricsRegistry)
+	//am.debugRequestMeter = metrics.GetOrRegisterMeter(fmt.Sprintf("account.%s.debug_requests", id), me.MetricsRegistry)
+	//am.bidsReceivedMeter = metrics.GetOrRegisterMeter(fmt.Sprintf("account.%s.bids_received", id), me.MetricsRegistry)
+	//am.priceHistogram = metrics.GetOrRegisterHistogram(fmt.Sprintf("account.%s.prices", id), me.MetricsRegistry, metrics.NewExpDecaySample(1028, 0.015))
 	am.adapterMetrics = make(map[string]*AdapterMetrics, len(me.exchanges))
 	am.moduleMetrics = make(map[string]*ModuleMetrics)
 	am.storedResponsesMeter = metrics.GetOrRegisterMeter(fmt.Sprintf("account.%s.stored_responses", id), me.MetricsRegistry)
@@ -569,11 +595,12 @@ func (me *Metrics) getAccountMetrics(id string) *accountMetrics {
 			registerAdapterMetrics(me.MetricsRegistry, fmt.Sprintf("account.%s", id), string(a), am.adapterMetrics[a])
 		}
 	}
-	am.bidValidationCreativeSizeMeter = metrics.GetOrRegisterMeter(fmt.Sprintf("account.%s.response.validation.size.err", id), me.MetricsRegistry)
-	am.bidValidationCreativeSizeWarnMeter = metrics.GetOrRegisterMeter(fmt.Sprintf("account.%s.response.validation.size.warn", id), me.MetricsRegistry)
+	//Disable account metrics
+	//am.bidValidationCreativeSizeMeter = metrics.GetOrRegisterMeter(fmt.Sprintf("account.%s.response.validation.size.err", id), me.MetricsRegistry)
+	//am.bidValidationCreativeSizeWarnMeter = metrics.GetOrRegisterMeter(fmt.Sprintf("account.%s.response.validation.size.warn", id), me.MetricsRegistry)
 
-	am.bidValidationSecureMarkupMeter = metrics.GetOrRegisterMeter(fmt.Sprintf("account.%s.response.validation.secure.err", id), me.MetricsRegistry)
-	am.bidValidationSecureMarkupWarnMeter = metrics.GetOrRegisterMeter(fmt.Sprintf("account.%s.response.validation.secure.warn", id), me.MetricsRegistry)
+	//am.bidValidationSecureMarkupMeter = metrics.GetOrRegisterMeter(fmt.Sprintf("account.%s.response.validation.secure.err", id), me.MetricsRegistry)
+	//am.bidValidationSecureMarkupWarnMeter = metrics.GetOrRegisterMeter(fmt.Sprintf("account.%s.response.validation.secure.warn", id), me.MetricsRegistry)
 
 	if !me.MetricsDisabled.AccountModulesMetrics {
 		for _, mod := range me.modules {
@@ -603,20 +630,25 @@ func (me *Metrics) RecordRequest(labels Labels) {
 		}
 	}
 
+	// Request size by endpoint
+	if labels.RequestSize > 0 && labels.RType != ReqTypeAMP {
+		me.RequestSizeByEndpoint[GetEndpointFromRequestType(labels.RType)].Update(int64(labels.RequestSize))
+	}
+
 	// Handle the account metrics now.
-	am := me.getAccountMetrics(labels.PubID)
-	am.requestMeter.Mark(1)
+	//am := me.getAccountMetrics(labels.PubID)
+	//am.requestMeter.Mark(1)
 }
 
 func (me *Metrics) RecordDebugRequest(debugEnabled bool, pubID string) {
 	if debugEnabled {
 		me.DebugRequestMeter.Mark(1)
-		if pubID != PublisherUnknown {
+		/*if pubID != PublisherUnknown {
 			am := me.getAccountMetrics(pubID)
 			if !me.MetricsDisabled.AccountDebug {
 				am.debugRequestMeter.Mark(1)
 			}
-		}
+		}*/
 	}
 }
 
@@ -625,6 +657,10 @@ func (me *Metrics) RecordStoredResponse(pubId string) {
 	if pubId != PublisherUnknown && !me.MetricsDisabled.AccountStoredResponses {
 		me.getAccountMetrics(pubId).storedResponsesMeter.Mark(1)
 	}
+}
+
+func (me *Metrics) RecordGvlListRequest() {
+	me.GvlListRequestsMeter.Mark(1)
 }
 
 func (me *Metrics) RecordImps(labels ImpLabels) {
@@ -704,6 +740,8 @@ func (me *Metrics) RecordAdapterRequest(labels AdapterLabels, storedImp string) 
 		return
 	}
 
+	RecordAdapterRequest(me, storedImp, lowerCaseAdapter)
+
 	aam, ok := me.getAccountMetrics(labels.PubID).adapterMetrics[lowerCaseAdapter]
 	switch labels.AdapterBids {
 	case AdapterBidNone:
@@ -730,12 +768,29 @@ func (me *Metrics) RecordAdapterRequest(labels AdapterLabels, storedImp string) 
 	}
 }
 
-// Our helper function to record stored request gotbids/nobid
+// Our helper function to record stored request response gotbids/nobid
 func RecordStoredImp(me *Metrics, storedImp string, adapterName string, measurement string) {
+	//custMeterName := fmt.Sprintf("stored_imp.%s.%s.requests.%s", storedImp, adapterName, measurement)
 	custMeterName := fmt.Sprintf("stored_imp.%s.%s.requests.%s", storedImp, adapterName, measurement)
+	//prebidserver.adapter.yieldlab.prices.histogram,ad_unit=banner_top,account=abc
+	//prebidserver.stored_imp.807.yieldlab.requests.bid.meter
 	fmt.Println("RecordStoredImp", custMeterName)
 	custMeter := metrics.GetOrRegisterMeter(custMeterName, me.MetricsRegistry)
 	custMeter.Mark(1)
+}
+
+func RecordAdapterRequest(me *Metrics, storedImp string, adapterName string) {
+	custMeterName := fmt.Sprintf("stored_imp.%s.%s.requests.%s", storedImp, adapterName, "bid")
+	//fmt.Println("RecordStoredImp", custMeterName)
+	custMeter := metrics.GetOrRegisterMeter(custMeterName, me.MetricsRegistry)
+	custMeter.Mark(1)
+}
+
+func RecordAdapterPrice(me *Metrics, adapterName string, cpm float64, storedImp string) {
+	//prebidserver.adapter.<ID>.yieldlab.prices.histogram
+	custMeterName := fmt.Sprintf("adapter.%s.%s.prices", storedImp, adapterName)
+	custPriceMetric := metrics.GetOrRegisterHistogram(custMeterName, me.MetricsRegistry, metrics.NewExpDecaySample(1028, 0.015))
+	custPriceMetric.Update(int64(cpm))
 }
 
 // Keeps track of created and reused connections to adapter bidders and the time from the
@@ -760,6 +815,14 @@ func (me *Metrics) RecordAdapterConnections(adapterName openrtb_ext.BidderName,
 		am.ConnCreated.Inc(1)
 	}
 	am.ConnWaitTime.Update(connWaitTime)
+}
+
+func (m *Metrics) RecordAdapterConnectionDialError(adapterName openrtb_ext.BidderName) {
+	m.AdapterMetrics[strings.ToLower(string(adapterName))].ConnDialErrors.Inc(1)
+}
+
+func (m *Metrics) RecordAdapterConnectionDialTime(adapterName openrtb_ext.BidderName, dialStartTime time.Duration) {
+	m.AdapterMetrics[strings.ToLower(string(adapterName))].ConnDialTime.Update(dialStartTime)
 }
 
 func (me *Metrics) RecordDNSTime(dnsLookupTime time.Duration) {
@@ -788,9 +851,9 @@ func (me *Metrics) RecordAdapterBidReceived(labels AdapterLabels, bidType openrt
 	// Adapter metrics
 	am.BidsReceivedMeter.Mark(1)
 	// Account-Adapter metrics
-	if aam, ok := me.getAccountMetrics(labels.PubID).adapterMetrics[lowerCaseAdapterName]; ok {
+	/*if aam, ok := me.getAccountMetrics(labels.PubID).adapterMetrics[lowerCaseAdapterName]; ok {
 		aam.BidsReceivedMeter.Mark(1)
-	}
+	}*/
 
 	if metricsForType, ok := am.MarkupMetrics[bidType]; ok {
 		if hasAdm {
@@ -804,7 +867,7 @@ func (me *Metrics) RecordAdapterBidReceived(labels AdapterLabels, bidType openrt
 }
 
 // RecordAdapterPrice implements a part of the MetricsEngine interface. Generates a histogram of winning bid prices
-func (me *Metrics) RecordAdapterPrice(labels AdapterLabels, cpm float64) {
+func (me *Metrics) RecordAdapterPrice(labels AdapterLabels, cpm float64, storedImp string) {
 	adapterStr := string(labels.Adapter)
 	lowercaseAdapter := strings.ToLower(adapterStr)
 	am, ok := me.AdapterMetrics[lowercaseAdapter]
@@ -812,12 +875,16 @@ func (me *Metrics) RecordAdapterPrice(labels AdapterLabels, cpm float64) {
 		glog.Errorf("Trying to run adapter price metrics on %s: adapter metrics not found", adapterStr)
 		return
 	}
+
+	//fmt.Println("RecordAdapterPrice STORED IMP", storedImp)
+	RecordAdapterPrice(me, lowercaseAdapter, cpm, storedImp)
+
 	// Adapter metrics
 	am.PriceHistogram.Update(int64(cpm))
 	// Account-Adapter metrics
-	if aam, ok := me.getAccountMetrics(labels.PubID).adapterMetrics[lowercaseAdapter]; ok {
+	/*if aam, ok := me.getAccountMetrics(labels.PubID).adapterMetrics[lowercaseAdapter]; ok {
 		aam.PriceHistogram.Update(int64(cpm))
-	}
+	}*/
 }
 
 // RecordAdapterTime implements a part of the MetricsEngine interface. Records the adapter response time
@@ -995,10 +1062,10 @@ func (me *Metrics) RecordBidValidationCreativeSizeError(adapter openrtb_ext.Bidd
 	}
 	am.BidValidationCreativeSizeErrorMeter.Mark(1)
 
-	aam := me.getAccountMetrics(pubID)
+	/*aam := me.getAccountMetrics(pubID)
 	if !me.MetricsDisabled.AccountAdapterDetails {
 		aam.bidValidationCreativeSizeMeter.Mark(1)
-	}
+	}*/
 }
 
 func (me *Metrics) RecordBidValidationCreativeSizeWarn(adapter openrtb_ext.BidderName, pubID string) {
@@ -1010,10 +1077,10 @@ func (me *Metrics) RecordBidValidationCreativeSizeWarn(adapter openrtb_ext.Bidde
 	}
 	am.BidValidationCreativeSizeWarnMeter.Mark(1)
 
-	aam := me.getAccountMetrics(pubID)
+	/*aam := me.getAccountMetrics(pubID)
 	if !me.MetricsDisabled.AccountAdapterDetails {
 		aam.bidValidationCreativeSizeWarnMeter.Mark(1)
-	}
+	}*/
 }
 
 func (me *Metrics) RecordBidValidationSecureMarkupError(adapter openrtb_ext.BidderName, pubID string) {
@@ -1025,10 +1092,10 @@ func (me *Metrics) RecordBidValidationSecureMarkupError(adapter openrtb_ext.Bidd
 	}
 	am.BidValidationSecureMarkupErrorMeter.Mark(1)
 
-	aam := me.getAccountMetrics(pubID)
+	/*aam := me.getAccountMetrics(pubID)
 	if !me.MetricsDisabled.AccountAdapterDetails {
 		aam.bidValidationSecureMarkupMeter.Mark(1)
-	}
+	}*/
 }
 
 func (me *Metrics) RecordBidValidationSecureMarkupWarn(adapter openrtb_ext.BidderName, pubID string) {
@@ -1040,10 +1107,10 @@ func (me *Metrics) RecordBidValidationSecureMarkupWarn(adapter openrtb_ext.Bidde
 	}
 	am.BidValidationSecureMarkupWarnMeter.Mark(1)
 
-	aam := me.getAccountMetrics(pubID)
+	/*aam := me.getAccountMetrics(pubID)
 	if !me.MetricsDisabled.AccountAdapterDetails {
 		aam.bidValidationSecureMarkupWarnMeter.Mark(1)
-	}
+	}*/
 }
 
 func (me *Metrics) RecordModuleCalled(labels ModuleLabels, duration time.Duration) {

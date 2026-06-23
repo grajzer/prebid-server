@@ -36,6 +36,7 @@ import (
 	"github.com/prebid/prebid-server/v3/adapters/adview"
 	"github.com/prebid/prebid-server/v3/adapters/adxcg"
 	"github.com/prebid/prebid-server/v3/adapters/adyoulike"
+	"github.com/prebid/prebid-server/v3/adapters/afront"
 	"github.com/prebid/prebid-server/v3/adapters/aidem"
 	"github.com/prebid/prebid-server/v3/adapters/aja"
 	"github.com/prebid/prebid-server/v3/adapters/akcelo"
@@ -82,6 +83,7 @@ import (
 	"github.com/prebid/prebid-server/v3/adapters/connatix"
 	"github.com/prebid/prebid-server/v3/adapters/connectad"
 	"github.com/prebid/prebid-server/v3/adapters/consumable"
+	"github.com/prebid/prebid-server/v3/adapters/contxtful"
 	"github.com/prebid/prebid-server/v3/adapters/conversant"
 	"github.com/prebid/prebid-server/v3/adapters/copper6ssp"
 	"github.com/prebid/prebid-server/v3/adapters/cpmstar"
@@ -162,6 +164,7 @@ import (
 	"github.com/prebid/prebid-server/v3/adapters/mobilefuse"
 	"github.com/prebid/prebid-server/v3/adapters/mobkoi"
 	"github.com/prebid/prebid-server/v3/adapters/motorik"
+	"github.com/prebid/prebid-server/v3/adapters/nativery"
 	"github.com/prebid/prebid-server/v3/adapters/nativo"
 	"github.com/prebid/prebid-server/v3/adapters/nextmillennium"
 	"github.com/prebid/prebid-server/v3/adapters/nexx360"
@@ -223,6 +226,7 @@ import (
 	"github.com/prebid/prebid-server/v3/adapters/tappx"
 	"github.com/prebid/prebid-server/v3/adapters/teads"
 	"github.com/prebid/prebid-server/v3/adapters/telaria"
+	"github.com/prebid/prebid-server/v3/adapters/teqblaze"
 	"github.com/prebid/prebid-server/v3/adapters/theadx"
 	"github.com/prebid/prebid-server/v3/adapters/thetradedesk"
 	"github.com/prebid/prebid-server/v3/adapters/tpmn"
@@ -297,6 +301,7 @@ func newAdapterBuilders() map[openrtb_ext.BidderName]adapters.Builder {
 		openrtb_ext.BidderAdView:            adview.Builder,
 		openrtb_ext.BidderAdxcg:             adxcg.Builder,
 		openrtb_ext.BidderAdyoulike:         adyoulike.Builder,
+		openrtb_ext.BidderAfront:            afront.Builder,
 		openrtb_ext.BidderAidem:             aidem.Builder,
 		openrtb_ext.BidderAJA:               aja.Builder,
 		openrtb_ext.BidderAkcelo:            akcelo.Builder,
@@ -343,6 +348,7 @@ func newAdapterBuilders() map[openrtb_ext.BidderName]adapters.Builder {
 		openrtb_ext.BidderConnatix:          connatix.Builder,
 		openrtb_ext.BidderConnectAd:         connectad.Builder,
 		openrtb_ext.BidderConsumable:        consumable.Builder,
+		openrtb_ext.BidderContxtful:         contxtful.Builder,
 		openrtb_ext.BidderConversant:        conversant.Builder,
 		openrtb_ext.BidderCopper6ssp:        copper6ssp.Builder,
 		openrtb_ext.BidderCpmstar:           cpmstar.Builder,
@@ -426,6 +432,7 @@ func newAdapterBuilders() map[openrtb_ext.BidderName]adapters.Builder {
 		openrtb_ext.BidderMobileFuse:        mobilefuse.Builder,
 		openrtb_ext.BidderMobkoi:            mobkoi.Builder,
 		openrtb_ext.BidderMotorik:           motorik.Builder,
+		openrtb_ext.BidderNativery:          nativery.Builder,
 		openrtb_ext.BidderNativo:            nativo.Builder,
 		openrtb_ext.BidderNextMillennium:    nextmillennium.Builder,
 		openrtb_ext.BidderNexx360:           nexx360.Builder,
@@ -487,6 +494,7 @@ func newAdapterBuilders() map[openrtb_ext.BidderName]adapters.Builder {
 		openrtb_ext.BidderTappx:             tappx.Builder,
 		openrtb_ext.BidderTeads:             teads.Builder,
 		openrtb_ext.BidderTelaria:           telaria.Builder,
+		openrtb_ext.BidderTeqBlaze:          teqblaze.Builder,
 		openrtb_ext.BidderTheadx:            theadx.Builder,
 		openrtb_ext.BidderTheTradeDesk:      thetradedesk.Builder,
 		openrtb_ext.BidderTpmn:              tpmn.Builder,

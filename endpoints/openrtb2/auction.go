@@ -3,10 +3,12 @@ package openrtb2
 import (
 	"compress/gzip"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -293,7 +295,7 @@ func (deps *endpointDeps) Auction(w http.ResponseWriter, r *http.Request, _ http
 		return
 	}
 
-	if auctionResponse.BidResponse.Ext != nil {
+	if auctionResponse != nil && auctionResponse.BidResponse != nil && auctionResponse.BidResponse.Ext != nil {
 		err = setSeatNonBidRaw(req, auctionResponse)
 		if err != nil {
 			glog.Errorf("Error setting seat non-bid: %v", err)
@@ -385,10 +387,13 @@ func sendAuctionResponse(
 
 	w.Header().Set("Content-Type", "application/json")
 
+	// Exitpoint will modify the response and set response headers according to hook implementation.
+	finalResponse := hookExecutor.ExecuteExitpointStage(response, w)
+
 	// If an error happens when encoding the response, there isn't much we can do.
 	// If we've sent _any_ bytes, then Go would have sent the 200 status code first.
 	// That status code can't be un-sent... so the best we can do is log the error.
-	if err := enc.Encode(response); err != nil {
+	if err := enc.Encode(finalResponse); err != nil {
 		labels.RequestStatus = metrics.RequestStatusNetworkErr
 		ao.Errors = append(ao.Errors, fmt.Errorf("/openrtb2/auction Failed to send response: %v", err))
 	}
@@ -442,6 +447,7 @@ func (deps *endpointDeps) parseRequest(httpRequest *http.Request, labels *metric
 		errs = []error{err}
 		return
 	}
+	labels.RequestSize = len(requestJson)
 
 	if limitedReqReader.N <= 0 {
 		// Limited Reader returns 0 if the request was exactly at the max size or over the limit.
@@ -532,10 +538,28 @@ func (deps *endpointDeps) parseRequest(httpRequest *http.Request, labels *metric
 		return
 	}
 
+	/*fmt.Println("\n")
+	//fmt.Println("\nimpExtInfoMap", impExtInfoMap[0].StoredImp)
+	for key, value := range impExtInfoMap {
+		fmt.Println("Key:", key, "Value:", string(value.StoredImp))
+	}
+	fmt.Println("\n")
+
+	fmt.Println("\n")
+	fmt.Println("REQUEST JSON", string(requestJson))
+	fmt.Println("\n")*/
+
 	if err := jsonutil.UnmarshalValid(requestJson, req.BidRequest); err != nil {
 		errs = []error{err}
 		return
 	}
+
+	/*fmt.Println("\n")
+	for i := 0; i < len(req.BidRequest.Imp); i++ {
+		//fmt.Printf("struct IMP: %#v\n", req.BidRequest.Imp[i])
+		fmt.Println("auction.go, IMP.EXT", string(req.BidRequest.Imp[i].Ext))
+	}
+	fmt.Printf("struct BidRequest.Ext", string(req.BidRequest.Ext))*/
 
 	// normalize to openrtb 2.6
 	if err := openrtb_ext.ConvertUpTo26(req); err != nil {
@@ -578,6 +602,9 @@ func (deps *endpointDeps) parseRequest(httpRequest *http.Request, labels *metric
 		errs = append(errs, errL...)
 	}
 
+	//fmt.Println("\nauction.go parseRequest End")
+	//fmt.Printf("struct BidRequest.Ext", string(req.BidRequest.Ext))
+	//fmt.Println("\n")
 	return
 }
 
@@ -1676,13 +1703,143 @@ func (deps *endpointDeps) getStoredRequests(ctx context.Context, requestJson []b
 			}
 		}
 	}
-
 	storedRequests, storedImps, errs := deps.storedReqFetcher.FetchRequests(ctx, storedReqIds, impStoredReqIds)
 	if len(errs) != 0 {
 		return "", false, nil, nil, errs
 	}
 
+	/*fmt.Println("AUCTION.GO getStoredRequests")
+	for k, v := range storedImps {
+		fmt.Printf("%s -> %s\n", k, v)
+
+	}*/
+	if err := normalizePrebidInMap(storedImps); err != nil {
+		// handle error
+	}
+
 	return storedBidRequestId, hasStoredBidRequest, storedRequests, storedImps, errs
+}
+
+func transformExtPrebid(b []byte) ([]byte, error) {
+	// Fetch ext.prebid
+	prebidBytes, prebidType, _, err := jsonparser.Get(b, "ext", "prebid")
+	if err == jsonparser.KeyPathNotFoundError {
+		// Nothing to change
+		return b, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	// Only transform if it's an array
+	if prebidType == jsonparser.Array {
+		var elems [][]byte
+		var weights []int
+
+		_, err := jsonparser.ArrayEach(prebidBytes, func(elem []byte, valueType jsonparser.ValueType, offset int, e error) {
+			// Keep a copy of each element as raw bytes
+			elems = append(elems, append([]byte(nil), elem...))
+
+			// Default weight 0 if missing/invalid; clamp to [0,100]
+			w64, err := jsonparser.GetInt(elem, "weight")
+			w := int(w64)
+			if err != nil || w < 0 {
+				w = 0
+			} else if w > 100 {
+				w = 100
+			}
+			weights = append(weights, w)
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		switch len(elems) {
+		case 0:
+			// Empty array → set to empty object
+			b, err = jsonparser.Set(b, []byte("{}"), "ext", "prebid")
+			if err != nil {
+				return nil, err
+			}
+			return b, nil
+		case 1:
+			// Single element → use it as-is
+			b, err = jsonparser.Set(b, elems[0], "ext", "prebid")
+			if err != nil {
+				return nil, err
+			}
+			return b, nil
+		default:
+			// Weighted random pick
+			total := 0
+			for _, w := range weights {
+				total += w
+			}
+
+			var chosen []byte
+			if total <= 0 {
+				// Fallback: uniform random among elements
+				n := big.NewInt(int64(len(elems)))
+				r, err := rand.Int(rand.Reader, n)
+				if err != nil {
+					// On RNG failure, default to first
+					chosen = elems[0]
+				} else {
+					chosen = elems[int(r.Int64())]
+				}
+			} else {
+				// Pick r in [0, total)
+				r, err := rand.Int(rand.Reader, big.NewInt(int64(total)))
+				if err != nil {
+					// On RNG failure, default to first non-zero weight or first
+					for i, w := range weights {
+						if w > 0 {
+							chosen = elems[i]
+							break
+						}
+					}
+					if chosen == nil {
+						chosen = elems[0]
+					}
+				} else {
+					target := int(r.Int64())
+					cum := 0
+					for i, w := range weights {
+						cum += w
+						if target < cum {
+							chosen = elems[i]
+							break
+						}
+					}
+					if chosen == nil {
+						// Guard: if rounding or logic glitch, pick last
+						chosen = elems[len(elems)-1]
+					}
+				}
+			}
+
+			b, err = jsonparser.Set(b, chosen, "ext", "prebid")
+			if err != nil {
+				return nil, err
+			}
+			return b, nil
+		}
+	}
+
+	// Already an object (or not an array) → leave unchanged
+	return b, nil
+}
+
+// Normalize all values in a map[string]json.RawMessage
+func normalizePrebidInMap(m map[string]json.RawMessage) error {
+	for k, v := range m {
+		nb, err := transformExtPrebid(v)
+		if err != nil {
+			return err
+		}
+		m[k] = json.RawMessage(nb)
+	}
+	return nil
 }
 
 func (deps *endpointDeps) processStoredRequests(requestJson []byte, impInfo []ImpExtPrebidData, storedRequests map[string]json.RawMessage, storedImps map[string]json.RawMessage, storedBidRequestId string, hasStoredBidRequest bool) ([]byte, map[string]exchange.ImpExtInfo, []error) {
@@ -1693,7 +1850,6 @@ func (deps *endpointDeps) processStoredRequests(requestJson []byte, impInfo []Im
 
 	// Apply the Stored BidRequest, if it exists
 	resolvedRequest := requestJson
-
 	if hasStoredBidRequest {
 		isAppRequest, err := checkIfAppRequest(requestJson)
 		if err != nil {
@@ -1748,7 +1904,12 @@ func (deps *endpointDeps) processStoredRequests(requestJson []byte, impInfo []Im
 	resolvedImps := make([]json.RawMessage, 0, len(impInfo))
 	for i, impData := range impInfo {
 		if impData.ImpExtPrebid.StoredRequest != nil && len(impData.ImpExtPrebid.StoredRequest.ID) > 0 {
+			//fmt.Println("AUCTION.GO processStoredRequests impData.ImpExtPrebid.StoredRequest.ID", impData.ImpExtPrebid.StoredRequest.ID)
 			resolvedImp, err := jsonpatch.MergePatch(storedImps[impData.ImpExtPrebid.StoredRequest.ID], impData.Imp)
+			//SET id manually to impData.ImpExtPrebid.StoredRequest.ID, prebid analytics issue
+			if err == nil {
+				resolvedImp, err = jsonparser.Set(resolvedImp, []byte(fmt.Sprintf("\"%s\"", impData.ImpExtPrebid.StoredRequest.ID)), "id")
+			}
 
 			if err != nil {
 				hasErr, errMessage := getJsonSyntaxError(impData.Imp)
@@ -1764,6 +1925,7 @@ func (deps *endpointDeps) processStoredRequests(requestJson []byte, impInfo []Im
 			}
 			resolvedImps = append(resolvedImps, resolvedImp)
 			impId, err := jsonparser.GetString(resolvedImp, "id")
+			//fmt.Println("AUCTION.GO processStoredRequests IMP ID", impId)
 			if err != nil {
 				return nil, nil, []error{err}
 			}
@@ -1778,7 +1940,11 @@ func (deps *endpointDeps) processStoredRequests(requestJson []byte, impInfo []Im
 			if err != nil && err != jsonparser.KeyPathNotFoundError {
 				return nil, nil, []error{err}
 			}
-			impExtInfoMap[impId] = exchange.ImpExtInfo{EchoVideoAttrs: echoVideoAttributes, StoredImp: storedImps[impData.ImpExtPrebid.StoredRequest.ID], Passthrough: passthrough}
+
+			// Extract ConfigID from Merged Imp
+			configID, _ := jsonparser.GetString(resolvedImp, "ext", "prebid", "config_id")
+
+			impExtInfoMap[impId] = exchange.ImpExtInfo{EchoVideoAttrs: echoVideoAttributes, StoredImp: storedImps[impData.ImpExtPrebid.StoredRequest.ID], Passthrough: passthrough, ConfigID: configID}
 
 		} else {
 			resolvedImps = append(resolvedImps, impData.Imp)

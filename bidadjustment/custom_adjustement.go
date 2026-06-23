@@ -22,6 +22,7 @@ type ExtRequestPrebid struct {
 	BidFixedPrice        float64                    `json:"bidfixedprice,omitempty"`
 	BidderDebug          bool                       `json:"debug,omitempty"`
 	Bidder               map[string]json.RawMessage `json:"bidder,omitempty"`
+	ConfigId             string                     `json:"config_id,omitempty"`
 	StoredRequest        map[string]string          `json:"storedrequest,omitempty"`
 }
 
@@ -85,6 +86,7 @@ func StoreToRedis(r *openrtb_ext.RequestWrapper, response *openrtb2.BidResponse)
 	var domain = ""
 	var placementId = ""
 	var storedRequest = getExtJSON(r).Prebid.StoredRequest
+	var configId = getExtJSON(r).Prebid.ConfigId
 
 	var winningBidIdx = -1
 	var winningPrice float64 = 0
@@ -98,6 +100,10 @@ func StoreToRedis(r *openrtb_ext.RequestWrapper, response *openrtb2.BidResponse)
 	if r.Site.Page != "" {
 		domain = r.Site.Page
 	}
+
+	reqJson, _ := GetJSONIndented(r)
+	//fmt.Println("\nREQ JSON", string(reqJson))
+	WriteToRedis(reqJson, 10*time.Minute, fmt.Sprintf("%s-%d", "bidder-debug-server-request", rand.IntN(10)))
 
 	//err := PrintJSONIndented(response)
 	//if err != nil {
@@ -135,11 +141,11 @@ func StoreToRedis(r *openrtb_ext.RequestWrapper, response *openrtb2.BidResponse)
 				response.SeatBid = response.SeatBid[winningBidIdx : winningBidIdx+1]
 				//response.SeatBid[0].Bid[0].AdM = "<VAST version=\"3.0\">\n<Ad>\n <Wrapper>\n   <AdSystem>TargetVideo wrapper</AdSystem>\n   <VASTAdTagURI><![CDATA[https://vid.tvserve.io/ads/bid?iu=/2/target-video/" + domain + "&bid_hash=" + redisKey + "&placement_id=" + placementId + "]]></VASTAdTagURI>\n   <Creatives></Creatives>\n </Wrapper>\n</Ad>\n</VAST>"
 				//response.SeatBid[0].Bid[0].AdM = "<VAST version=\"3.0\">\n<Ad>\n <Wrapper>\n   <AdSystem>TargetVideo wrapper</AdSystem>\n   <VASTAdTagURI><![CDATA[https://staging.dipcod.com/server/bid?u=1&bid_hash=" + redisKey + "&placement_id=2]]></VASTAdTagURI>\n   <Creatives></Creatives>\n </Wrapper>\n</Ad>\n</VAST>"
-				response.SeatBid[0].Bid[0].AdM = "<VAST version=\"3.0\">\n<Ad>\n <Wrapper>\n   <AdSystem>TargetVideo wrapper</AdSystem>\n   <VASTAdTagURI><![CDATA[https://vid.tvserve.io/server/bid?u=2&bid_hash=" + redisKey + "&placement_id=" + placementId + "&page_url=" + domain + "]]></VASTAdTagURI>\n   <Creatives></Creatives>\n </Wrapper>\n</Ad>\n</VAST>"
+				response.SeatBid[0].Bid[0].AdM = "<VAST version=\"3.0\">\n<Ad>\n <Wrapper>\n   <AdSystem>TargetVideo wrapper</AdSystem>\n   <VASTAdTagURI><![CDATA[https://vid.tvserve.io/server/bid?u=2&bid_hash=" + redisKey + "&placement_id=" + placementId + "&page_url=" + domain + "&config_id=" + configId + "]]></VASTAdTagURI>\n   <Creatives></Creatives>\n </Wrapper>\n</Ad>\n</VAST>"
 
 				//response.SeatBid[0].Bid[0].NURL = "https://vid.tvserve.io/ads/bid?iu=/2/target-video/" + domain + "&bid_hash=" + redisKey + "&placement_id=" + placementId
 				//response.SeatBid[0].Bid[0].NURL = "https://staging.dipcod.com/server/bid?u=1&&bid_hash=" + redisKey + "&placement_id=2"
-				response.SeatBid[0].Bid[0].NURL = "https://vid.tvserve.io/server/bid?u=2&bid_hash=" + redisKey + "&placement_id=" + placementId + "&page_url=" + domain
+				response.SeatBid[0].Bid[0].NURL = "https://vid.tvserve.io/server/bid?u=2&bid_hash=" + redisKey + "&placement_id=" + placementId + "&page_url=" + domain + "&config_id=" + configId
 				response.SeatBid[0].Bid[0].DealID = ""
 				response.SeatBid[0].Bid[0].CID = ""
 				//if placementId == "807" {
@@ -220,6 +226,16 @@ func GetJSONIndented(v interface{}) (string, error) {
 	}
 
 	return string(jsonData), nil
+}
+
+func WriteToRedis(content string, exp time.Duration, key string) {
+	redisClient := GetRedisClient()
+
+	// Add a string with expiration time
+	err := redisClient.AddStringWithExpiration(key, content, exp)
+	if err != nil {
+		fmt.Printf("Error adding string with expiration to Redis: %v\n", err)
+	}
 }
 
 func addToRedis(strVal string, expiration time.Duration, bidderKey string) (string, error) {

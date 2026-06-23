@@ -158,6 +158,7 @@ func TestDefaults(t *testing.T) {
 	cmpBools(t, "account_debug", true, cfg.Metrics.Disabled.AccountDebug)
 	cmpBools(t, "account_stored_responses", true, cfg.Metrics.Disabled.AccountStoredResponses)
 	cmpBools(t, "adapter_connections_metrics", true, cfg.Metrics.Disabled.AdapterConnectionMetrics)
+	cmpBools(t, "adapter_connection_dial_metrics", true, cfg.Metrics.Disabled.AdapterConnectionDialMetrics)
 	cmpBools(t, "adapter_buyeruid_scrubbed", true, cfg.Metrics.Disabled.AdapterBuyerUIDScrubbed)
 	cmpBools(t, "adapter_gdpr_request_blocked", false, cfg.Metrics.Disabled.AdapterGDPRRequestBlocked)
 	cmpStrings(t, "certificates_file", "", cfg.PemCertsFile)
@@ -483,6 +484,7 @@ metrics:
     account_debug: false
     account_stored_responses: false
     adapter_connections_metrics: true
+    adapter_connection_dial_metrics: true
     adapter_buyeruid_scrubbed: false
     adapter_gdpr_request_blocked: true
     account_modules_metrics: true
@@ -549,6 +551,7 @@ account_defaults:
           period_sec: 2000
           max_age_sec: 6000
           max_schema_dims: 10
+    bid_rounding: up
     bidadjustments:
         mediatype:
             '*':
@@ -597,6 +600,7 @@ analytics:
     - code: agma-code
       publisher_id: publisher-id
       site_app_id: site-or-app-id
+certificates_use_system: true
 `)
 
 func cmpStrings(t *testing.T, key, expected, actual string) {
@@ -722,6 +726,8 @@ func TestFullConfig(t *testing.T) {
 	cmpInts(t, "account_defaults.price_floors.fetch.period_sec", 2000, cfg.AccountDefaults.PriceFloors.Fetcher.Period)
 	cmpInts(t, "account_defaults.price_floors.fetch.max_age_sec", 6000, cfg.AccountDefaults.PriceFloors.Fetcher.MaxAge)
 	cmpInts(t, "account_defaults.price_floors.fetch.max_schema_dims", 10, cfg.AccountDefaults.PriceFloors.Fetcher.MaxSchemaDims)
+
+	assert.Equal(t, RoundingModeUp, cfg.AccountDefaults.BidRounding)
 
 	// Assert the DSA was correctly unmarshalled and DefaultUnpacked was built correctly
 	expectedDSA := AccountDSA{
@@ -915,6 +921,7 @@ func TestFullConfig(t *testing.T) {
 	cmpBools(t, "account_debug", false, cfg.Metrics.Disabled.AccountDebug)
 	cmpBools(t, "account_stored_responses", false, cfg.Metrics.Disabled.AccountStoredResponses)
 	cmpBools(t, "adapter_connections_metrics", true, cfg.Metrics.Disabled.AdapterConnectionMetrics)
+	cmpBools(t, "adapter_connection_dial_metrics", true, cfg.Metrics.Disabled.AdapterConnectionDialMetrics)
 	cmpBools(t, "adapter_buyeruid_scrubbed", false, cfg.Metrics.Disabled.AdapterBuyerUIDScrubbed)
 	cmpBools(t, "adapter_gdpr_request_blocked", true, cfg.Metrics.Disabled.AdapterGDPRRequestBlocked)
 	cmpStrings(t, "certificates_file", "/etc/ssl/cert.pem", cfg.PemCertsFile)
@@ -942,6 +949,7 @@ func TestFullConfig(t *testing.T) {
 	cmpStrings(t, "analytics.agma.accounts.0.publisher_id", "publisher-id", cfg.Analytics.Agma.Accounts[0].PublisherId)
 	cmpStrings(t, "analytics.agma.accounts.0.code", "agma-code", cfg.Analytics.Agma.Accounts[0].Code)
 	cmpStrings(t, "analytics.agma.accounts.0.site_app_id", "site-or-app-id", cfg.Analytics.Agma.Accounts[0].SiteAppId)
+	cmpBools(t, "certificates_use_system", true, cfg.CertsUseSystem)
 }
 
 func TestValidateConfig(t *testing.T) {

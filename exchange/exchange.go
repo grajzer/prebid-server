@@ -192,6 +192,7 @@ type ImpExtInfo struct {
 	EchoVideoAttrs bool
 	StoredImp      []byte
 	Passthrough    json.RawMessage
+	ConfigID       string
 }
 
 // AuctionRequest holds the bid request for the auction
@@ -235,13 +236,22 @@ type BidderRequest struct {
 	BidderStoredResponses map[string]json.RawMessage
 	IsRequestAlias        bool
 	ForcePlcmt            bool
+	SChain                openrtb2.SupplyChain
 	ImpReplaceImpId       map[string]bool
+	ImpIDToConfigID       map[string]string
 }
 
 func (e *exchange) HoldAuction(ctx context.Context, r *AuctionRequest, debugLog *DebugLog) (*AuctionResponse, error) {
 	if r == nil {
 		return nil, nil
 	}
+
+	/*fmt.Println("\n")
+	for i := 0; i < len(r.BidRequestWrapper.BidRequest.Imp); i++ {
+		//fmt.Printf("struct IMP: %#v\n", req.BidRequest.Imp[i])
+		fmt.Println("exchange.go, IMP.EXT", string(r.BidRequestWrapper.BidRequest.Imp[i].Ext))
+		fmt.Println("exchange.go, IMP.ID", r.BidRequestWrapper.BidRequest.Imp[i].ID)
+	}*/
 
 	if r.BidRequestWrapper.BidRequest.Cur == nil || len(r.BidRequestWrapper.BidRequest.Cur) == 0 {
 		r.BidRequestWrapper.BidRequest.Cur = []string{"EUR"}
@@ -253,6 +263,9 @@ func (e *exchange) HoldAuction(ctx context.Context, r *AuctionRequest, debugLog 
 	}
 
 	requestExt, err := r.BidRequestWrapper.GetRequestExt()
+	/*fmt.Println("\n")
+	fmt.Printf("struct requestExt: %+v\n", requestExt)
+	fmt.Println("\n")*/
 	if err != nil {
 		return nil, err
 	}
@@ -459,7 +472,7 @@ func (e *exchange) HoldAuction(ctx context.Context, r *AuctionRequest, debugLog 
 		//If includebrandcategory is present in ext then CE feature is on.
 		if requestExtPrebid.Targeting != nil && requestExtPrebid.Targeting.IncludeBrandCategory != nil {
 			var rejections []string
-			bidCategory, adapterBids, rejections, err = applyCategoryMapping(ctx, *requestExtPrebid.Targeting, adapterBids, e.categoriesFetcher, targData, &randomDeduplicateBidBooleanGenerator{}, &seatNonBidBuilder)
+			bidCategory, adapterBids, rejections, err = applyCategoryMapping(ctx, *requestExtPrebid.Targeting, adapterBids, e.categoriesFetcher, targData, &randomDeduplicateBidBooleanGenerator{}, &seatNonBidBuilder, r.Account)
 			if err != nil {
 				return nil, fmt.Errorf("Error in category mapping : %s", err.Error())
 			}
@@ -491,7 +504,7 @@ func (e *exchange) HoldAuction(ctx context.Context, r *AuctionRequest, debugLog 
 			// A non-nil auction is only needed if targeting is active. (It is used below this block to extract cache keys)
 			auc = newAuction(adapterBids, len(r.BidRequestWrapper.Imp), targData.preferDeals)
 			auc.validateAndUpdateMultiBid(adapterBids, targData.preferDeals, r.Account.DefaultBidLimit)
-			auc.setRoundedPrices(*targData)
+			auc.setRoundedPrices(*targData, r.Account)
 
 			if requestExtPrebid.SupportDeals {
 				dealErrs := applyDealSupport(r.BidRequestWrapper.BidRequest, auc, bidCategory, multiBidMap)
@@ -808,7 +821,11 @@ func (e *exchange) getAllBids(
 			brw.adapter = bidderRequest.BidderCoreName
 			// Defer basic metrics to insure we capture them after all the values have been set
 			defer func() {
-				e.me.RecordAdapterRequest(bidderRequest.BidderLabels, bidderRequest.BidRequest.Imp[0].ID)
+				storedImp := bidderRequest.BidRequest.Imp[0].ID
+				if configID, ok := bidderRequest.ImpIDToConfigID[storedImp]; ok && configID != "" {
+					storedImp = fmt.Sprintf("%s.%s", storedImp, configID)
+				}
+				e.me.RecordAdapterRequest(bidderRequest.BidderLabels, storedImp)
 			}()
 			start := time.Now()
 
@@ -856,7 +873,11 @@ func (e *exchange) getAllBids(
 				if seatBid != nil {
 					for _, bid := range seatBid.Bids {
 						var cpm = float64(bid.Bid.Price * 1000)
-						e.me.RecordAdapterPrice(bidderRequest.BidderLabels, cpm)
+						storedImp := bidderRequest.BidRequest.Imp[0].ID
+						if configID, ok := bidderRequest.ImpIDToConfigID[storedImp]; ok && configID != "" {
+							storedImp = fmt.Sprintf("%s.%s", storedImp, configID)
+						}
+						e.me.RecordAdapterPrice(bidderRequest.BidderLabels, cpm, storedImp)
 						e.me.RecordAdapterBidReceived(bidderRequest.BidderLabels, bid.BidType, bid.Bid.AdM != "")
 					}
 				}
@@ -1046,7 +1067,7 @@ func encodeBidResponseExt(bidResponseExt *openrtb_ext.ExtBidResponse) ([]byte, e
 	return buffer.Bytes(), err
 }
 
-func applyCategoryMapping(ctx context.Context, targeting openrtb_ext.ExtRequestTargeting, seatBids map[openrtb_ext.BidderName]*entities.PbsOrtbSeatBid, categoriesFetcher stored_requests.CategoryFetcher, targData *targetData, booleanGenerator deduplicateChanceGenerator, seatNonBidBuilder *SeatNonBidBuilder) (map[string]string, map[openrtb_ext.BidderName]*entities.PbsOrtbSeatBid, []string, error) {
+func applyCategoryMapping(ctx context.Context, targeting openrtb_ext.ExtRequestTargeting, seatBids map[openrtb_ext.BidderName]*entities.PbsOrtbSeatBid, categoriesFetcher stored_requests.CategoryFetcher, targData *targetData, booleanGenerator deduplicateChanceGenerator, seatNonBidBuilder *SeatNonBidBuilder, account config.Account) (map[string]string, map[openrtb_ext.BidderName]*entities.PbsOrtbSeatBid, []string, error) {
 	res := make(map[string]string)
 
 	type bidDedupe struct {
@@ -1130,7 +1151,7 @@ func applyCategoryMapping(ctx context.Context, targeting openrtb_ext.ExtRequestT
 
 			// TODO: consider should we remove bids with zero duration here?
 
-			priceBucket = GetPriceBucket(*bid.Bid, *targData)
+			priceBucket = GetPriceBucket(*bid.Bid, *targData, account)
 
 			newDur, err := findDurationRange(duration, targeting.DurationRangeSec)
 			if err != nil {

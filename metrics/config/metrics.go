@@ -7,6 +7,7 @@ import (
 	"github.com/prebid/prebid-server/v3/metrics"
 	prometheusmetrics "github.com/prebid/prebid-server/v3/metrics/prometheus"
 	"github.com/prebid/prebid-server/v3/openrtb_ext"
+	"github.com/prebid/prebid-server/v3/util/randomutil"
 	gometrics "github.com/rcrowley/go-metrics"
 	influxdb "github.com/vrischmann/go-metrics-influxdb"
 )
@@ -19,6 +20,7 @@ func NewMetricsEngine(cfg *config.Configuration, adapterList []openrtb_ext.Bidde
 	// of 1 we won't use the list so it will be garbage collected.
 	engineList := make(MultiMetricsEngine, 0, 2)
 	returnEngine := DetailedMetricsEngine{}
+	instanceId := randomutil.RandomString(8)
 
 	if cfg.Metrics.Influxdb.Host != "" {
 		// Currently use go-metrics as the metrics piece for influx
@@ -26,7 +28,7 @@ func NewMetricsEngine(cfg *config.Configuration, adapterList []openrtb_ext.Bidde
 		engineList = append(engineList, returnEngine.GoMetrics)
 
 		// Set up the Influx logger
-		go influxdb.InfluxDB(
+		go influxdb.InfluxDBWithTags(
 			returnEngine.GoMetrics.MetricsRegistry,                             // metrics registry
 			time.Second*time.Duration(cfg.Metrics.Influxdb.MetricSendInterval), // Configurable interval
 			cfg.Metrics.Influxdb.Host,                                          // the InfluxDB url
@@ -34,7 +36,8 @@ func NewMetricsEngine(cfg *config.Configuration, adapterList []openrtb_ext.Bidde
 			cfg.Metrics.Influxdb.Measurement,                                   // your measurement
 			cfg.Metrics.Influxdb.Username,                                      // your InfluxDB user
 			cfg.Metrics.Influxdb.Password,                                      // your InfluxDB password,
-			cfg.Metrics.Influxdb.AlignTimestamps,                               // align timestamps
+			map[string]string{"instance": instanceId},
+			cfg.Metrics.Influxdb.AlignTimestamps, // align timestamps
 		)
 		// Influx is not added to the engine list as goMetrics takes care of it already.
 	}
@@ -169,9 +172,9 @@ func (me *MultiMetricsEngine) RecordAdapterBidReceived(labels metrics.AdapterLab
 }
 
 // RecordAdapterPrice across all engines
-func (me *MultiMetricsEngine) RecordAdapterPrice(labels metrics.AdapterLabels, cpm float64) {
+func (me *MultiMetricsEngine) RecordAdapterPrice(labels metrics.AdapterLabels, cpm float64, storedImp string) {
 	for _, thisME := range *me {
-		thisME.RecordAdapterPrice(labels, cpm)
+		thisME.RecordAdapterPrice(labels, cpm, storedImp)
 	}
 }
 
@@ -293,6 +296,12 @@ func (me *MultiMetricsEngine) RecordStoredResponse(pubId string) {
 	}
 }
 
+func (me *MultiMetricsEngine) RecordGvlListRequest() {
+	for _, thisME := range *me {
+		thisME.RecordGvlListRequest()
+	}
+}
+
 func (me *MultiMetricsEngine) RecordAdsCertReq(success bool) {
 	for _, thisME := range *me {
 		thisME.RecordAdsCertReq(success)
@@ -378,6 +387,18 @@ func (me *MultiMetricsEngine) RecordAdapterThrottled(adapter openrtb_ext.BidderN
 	}
 }
 
+func (me *MultiMetricsEngine) RecordAdapterConnectionDialError(adapterName openrtb_ext.BidderName) {
+	for _, thisME := range *me {
+		thisME.RecordAdapterConnectionDialError(adapterName)
+	}
+}
+
+func (me *MultiMetricsEngine) RecordAdapterConnectionDialTime(adapterName openrtb_ext.BidderName, dialStartTime time.Duration) {
+	for _, thisME := range *me {
+		thisME.RecordAdapterConnectionDialTime(adapterName, dialStartTime)
+	}
+}
+
 // NilMetricsEngine implements the MetricsEngine interface where no metrics are actually captured. This is
 // used if no metric backend is configured and also for tests.
 type NilMetricsEngine struct{}
@@ -443,7 +464,7 @@ func (me *NilMetricsEngine) RecordAdapterBidReceived(labels metrics.AdapterLabel
 }
 
 // RecordAdapterPrice as a noop
-func (me *NilMetricsEngine) RecordAdapterPrice(labels metrics.AdapterLabels, cpm float64) {
+func (me *NilMetricsEngine) RecordAdapterPrice(labels metrics.AdapterLabels, cpm float64, storedImp string) {
 }
 
 // RecordAdapterTime as a noop
@@ -513,6 +534,9 @@ func (me *NilMetricsEngine) RecordDebugRequest(debugEnabled bool, pubId string) 
 func (me *NilMetricsEngine) RecordStoredResponse(pubId string) {
 }
 
+func (me *NilMetricsEngine) RecordGvlListRequest() {
+}
+
 func (me *NilMetricsEngine) RecordAdsCertReq(success bool) {
 
 }
@@ -556,4 +580,10 @@ func (me *NilMetricsEngine) RecordModuleTimeout(labels metrics.ModuleLabels) {
 
 // RecordAdapterThrottled as a noop
 func (me *NilMetricsEngine) RecordAdapterThrottled(adapter openrtb_ext.BidderName) {
+}
+
+func (me *NilMetricsEngine) RecordAdapterConnectionDialError(adapterName openrtb_ext.BidderName) {
+}
+
+func (me *NilMetricsEngine) RecordAdapterConnectionDialTime(adapterName openrtb_ext.BidderName, dialStartTime time.Duration) {
 }
