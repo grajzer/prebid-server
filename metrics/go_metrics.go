@@ -6,9 +6,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/golang/glog"
-	"github.com/prebid/prebid-server/v3/config"
-	"github.com/prebid/prebid-server/v3/openrtb_ext"
+	"github.com/prebid/prebid-server/v4/config"
+	"github.com/prebid/prebid-server/v4/logger"
+	"github.com/prebid/prebid-server/v4/openrtb_ext"
 	metrics "github.com/rcrowley/go-metrics"
 )
 
@@ -36,6 +36,8 @@ type Metrics struct {
 	BidderServerResponseTimer      metrics.Timer
 	StoredResponsesMeter           metrics.Meter
 	GvlListRequestsMeter           metrics.Meter
+	LiveGVLFetchSuccess            metrics.Meter
+	LiveGVLFetchFailure            metrics.Meter
 
 	// Metrics for OpenRTB requests specifically
 	RequestStatuses       map[RequestType]map[RequestStatus]metrics.Meter
@@ -188,6 +190,8 @@ func NewBlankMetrics(registry metrics.Registry, exchanges []string, disabledMetr
 		SyncerSetsMeter:                make(map[string]map[SyncerSetUidStatus]metrics.Meter),
 		StoredResponsesMeter:           blankMeter,
 		GvlListRequestsMeter:           blankMeter,
+		LiveGVLFetchSuccess:            blankMeter,
+		LiveGVLFetchFailure:            blankMeter,
 
 		ImpsTypeBanner: blankMeter,
 		ImpsTypeVideo:  blankMeter,
@@ -317,6 +321,8 @@ func NewMetrics(registry metrics.Registry, exchanges []openrtb_ext.BidderName, d
 	newMetrics.PrebidCacheRequestTimerError = metrics.GetOrRegisterTimer("prebid_cache_request_time.err", registry)
 	newMetrics.StoredResponsesMeter = metrics.GetOrRegisterMeter("stored_responses", registry)
 	newMetrics.GvlListRequestsMeter = metrics.GetOrRegisterMeter("gvl_requests", registry)
+	newMetrics.LiveGVLFetchSuccess = metrics.GetOrRegisterMeter("live_gvl_fetch.ok", registry)
+	newMetrics.LiveGVLFetchFailure = metrics.GetOrRegisterMeter("live_gvl_fetch.failed", registry)
 	newMetrics.OverheadTimer = makeOverheadTimerMetrics(registry)
 	newMetrics.BidderServerResponseTimer = metrics.GetOrRegisterTimer("bidder_server_response_time_seconds", registry)
 
@@ -663,6 +669,14 @@ func (me *Metrics) RecordGvlListRequest() {
 	me.GvlListRequestsMeter.Mark(1)
 }
 
+func (me *Metrics) RecordLiveGVLFetch(success bool) {
+	if success {
+		me.LiveGVLFetchSuccess.Mark(1)
+	} else {
+		me.LiveGVLFetchFailure.Mark(1)
+	}
+}
+
 func (me *Metrics) RecordImps(labels ImpLabels) {
 	me.ImpMeter.Mark(int64(1))
 	if labels.BannerImps {
@@ -724,7 +738,7 @@ func (me *Metrics) RecordAdapterPanic(labels AdapterLabels) {
 	lowerCaseAdapterName := strings.ToLower(adapterStr)
 	am, ok := me.AdapterMetrics[lowerCaseAdapterName]
 	if !ok {
-		glog.Errorf("Trying to run adapter metrics on %s: adapter metrics not found", adapterStr)
+		logger.Errorf("Trying to run adapter metrics on %s: adapter metrics not found", adapterStr)
 		return
 	}
 	am.PanicMeter.Mark(1)
@@ -736,7 +750,7 @@ func (me *Metrics) RecordAdapterRequest(labels AdapterLabels, storedImp string) 
 	lowerCaseAdapter := strings.ToLower(adapterStr)
 	am, ok := me.AdapterMetrics[lowerCaseAdapter]
 	if !ok {
-		glog.Errorf("Trying to run adapter metrics on %s: adapter metrics not found", adapterStr)
+		logger.Errorf("Trying to run adapter metrics on %s: adapter metrics not found", adapterStr)
 		return
 	}
 
@@ -757,7 +771,7 @@ func (me *Metrics) RecordAdapterRequest(labels AdapterLabels, storedImp string) 
 			aam.GotBidsMeter.Mark(1)
 		}
 	default:
-		glog.Warningf("No go-metrics logged for AdapterBids value: %s", labels.AdapterBids)
+		logger.Warnf("No go-metrics logged for AdapterBids value: %s", labels.AdapterBids)
 	}
 	for errType := range labels.AdapterErrors {
 		am.ErrorMeters[errType].Mark(1)
@@ -805,7 +819,7 @@ func (me *Metrics) RecordAdapterConnections(adapterName openrtb_ext.BidderName,
 	lowerCaseAdapterName := strings.ToLower(string(adapterName))
 	am, ok := me.AdapterMetrics[lowerCaseAdapterName]
 	if !ok {
-		glog.Errorf("Trying to log adapter connection metrics for %s: adapter not found", string(adapterName))
+		logger.Errorf("Trying to log adapter connection metrics for %s: adapter not found", string(adapterName))
 		return
 	}
 
@@ -844,7 +858,7 @@ func (me *Metrics) RecordAdapterBidReceived(labels AdapterLabels, bidType openrt
 	lowerCaseAdapterName := strings.ToLower(adapterStr)
 	am, ok := me.AdapterMetrics[lowerCaseAdapterName]
 	if !ok {
-		glog.Errorf("Trying to run adapter bid metrics on %s: adapter metrics not found", adapterStr)
+		logger.Errorf("Trying to run adapter bid metrics on %s: adapter metrics not found", adapterStr)
 		return
 	}
 
@@ -862,7 +876,7 @@ func (me *Metrics) RecordAdapterBidReceived(labels AdapterLabels, bidType openrt
 			metricsForType.NurlMeter.Mark(1)
 		}
 	} else {
-		glog.Errorf("bid/adm metrics map entry does not exist for type %s. This is a bug, and should be reported.", bidType)
+		logger.Errorf("bid/adm metrics map entry does not exist for type %s. This is a bug, and should be reported.", bidType)
 	}
 }
 
@@ -872,7 +886,7 @@ func (me *Metrics) RecordAdapterPrice(labels AdapterLabels, cpm float64, storedI
 	lowercaseAdapter := strings.ToLower(adapterStr)
 	am, ok := me.AdapterMetrics[lowercaseAdapter]
 	if !ok {
-		glog.Errorf("Trying to run adapter price metrics on %s: adapter metrics not found", adapterStr)
+		logger.Errorf("Trying to run adapter price metrics on %s: adapter metrics not found", adapterStr)
 		return
 	}
 
@@ -893,7 +907,7 @@ func (me *Metrics) RecordAdapterTime(labels AdapterLabels, length time.Duration)
 	lowercaseAdapter := strings.ToLower(adapterStr)
 	am, ok := me.AdapterMetrics[lowercaseAdapter]
 	if !ok {
-		glog.Errorf("Trying to run adapter latency metrics on %s: adapter metrics not found", string(labels.Adapter))
+		logger.Errorf("Trying to run adapter latency metrics on %s: adapter metrics not found", string(labels.Adapter))
 		return
 	}
 	// Adapter metrics
@@ -1019,7 +1033,7 @@ func (me *Metrics) RecordAdapterBuyerUIDScrubbed(adapterName openrtb_ext.BidderN
 
 	am, ok := me.AdapterMetrics[strings.ToLower(adapterStr)]
 	if !ok {
-		glog.Errorf("Trying to log adapter buyeruid scrubbed metric for %s: adapter not found", adapterStr)
+		logger.Errorf("Trying to log adapter buyeruid scrubbed metric for %s: adapter not found", adapterStr)
 		return
 	}
 
@@ -1034,7 +1048,7 @@ func (me *Metrics) RecordAdapterGDPRRequestBlocked(adapterName openrtb_ext.Bidde
 
 	am, ok := me.AdapterMetrics[strings.ToLower(adapterStr)]
 	if !ok {
-		glog.Errorf("Trying to log adapter GDPR request blocked metric for %s: adapter not found", adapterStr)
+		logger.Errorf("Trying to log adapter GDPR request blocked metric for %s: adapter not found", adapterStr)
 		return
 	}
 
@@ -1057,7 +1071,7 @@ func (me *Metrics) RecordBidValidationCreativeSizeError(adapter openrtb_ext.Bidd
 	adapterStr := string(adapter)
 	am, ok := me.AdapterMetrics[strings.ToLower(adapterStr)]
 	if !ok {
-		glog.Errorf("Trying to run adapter metrics on %s: adapter metrics not found", adapterStr)
+		logger.Errorf("Trying to run adapter metrics on %s: adapter metrics not found", adapterStr)
 		return
 	}
 	am.BidValidationCreativeSizeErrorMeter.Mark(1)
@@ -1072,7 +1086,7 @@ func (me *Metrics) RecordBidValidationCreativeSizeWarn(adapter openrtb_ext.Bidde
 	adapterStr := string(adapter)
 	am, ok := me.AdapterMetrics[strings.ToLower(adapterStr)]
 	if !ok {
-		glog.Errorf("Trying to run adapter metrics on %s: adapter metrics not found", adapterStr)
+		logger.Errorf("Trying to run adapter metrics on %s: adapter metrics not found", adapterStr)
 		return
 	}
 	am.BidValidationCreativeSizeWarnMeter.Mark(1)
@@ -1087,7 +1101,7 @@ func (me *Metrics) RecordBidValidationSecureMarkupError(adapter openrtb_ext.Bidd
 	adapterStr := string(adapter)
 	am, ok := me.AdapterMetrics[strings.ToLower(adapterStr)]
 	if !ok {
-		glog.Errorf("Trying to run adapter metrics on %s: adapter metrics not found", adapterStr)
+		logger.Errorf("Trying to run adapter metrics on %s: adapter metrics not found", adapterStr)
 		return
 	}
 	am.BidValidationSecureMarkupErrorMeter.Mark(1)
@@ -1102,7 +1116,7 @@ func (me *Metrics) RecordBidValidationSecureMarkupWarn(adapter openrtb_ext.Bidde
 	adapterStr := string(adapter)
 	am, ok := me.AdapterMetrics[strings.ToLower(adapterStr)]
 	if !ok {
-		glog.Errorf("Trying to run adapter metrics on %s: adapter metrics not found", adapterStr)
+		logger.Errorf("Trying to run adapter metrics on %s: adapter metrics not found", adapterStr)
 		return
 	}
 	am.BidValidationSecureMarkupWarnMeter.Mark(1)
@@ -1238,7 +1252,7 @@ func (me *Metrics) getModuleMetric(labels ModuleLabels) (*ModuleMetrics, error) 
 	mm, ok := me.ModuleMetrics[labels.Module][labels.Stage]
 	if !ok {
 		err := fmt.Errorf("Trying to run module %s metrics for stage %s: module metrics not found", labels.Module, labels.Stage)
-		glog.Errorf(err.Error())
+		logger.Errorf("%v", err)
 		return nil, err
 	}
 
@@ -1249,7 +1263,7 @@ func (me *Metrics) RecordAdapterThrottled(adapterName openrtb_ext.BidderName) {
 	adapterStr := adapterName.String()
 	am, ok := me.AdapterMetrics[strings.ToLower(adapterStr)]
 	if !ok {
-		glog.Errorf("Trying to log adapter throttled metric for %s: adapter not found", adapterStr)
+		logger.Errorf("Trying to log adapter throttled metric for %s: adapter not found", adapterStr)
 		return
 	}
 
