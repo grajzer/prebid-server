@@ -97,8 +97,10 @@ func StoreToRedis(r *openrtb_ext.RequestWrapper, response *openrtb2.BidResponse)
 		}
 	}
 
-	if r.Site.Page != "" {
+	if r.Site != nil && r.Site.Page != "" {
 		domain = r.Site.Page
+	} else if r.App != nil && r.App.Bundle != "" {
+		domain = r.App.Bundle
 	}
 
 	reqJson, _ := GetJSONIndented(r)
