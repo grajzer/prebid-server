@@ -123,9 +123,9 @@ func StoreToRedis(r *openrtb_ext.RequestWrapper, response *openrtb2.BidResponse)
 		if errRedis == nil {
 			for i, seatBid := range response.SeatBid {
 
-				jsonSingleSeat, _ := GetJSONIndented(seatBid)
-				redisKeyBidder, _ := addToRedis(jsonSingleSeat, 24*time.Hour, seatBid.Seat)
-				redisKeyBidder = redisKeyBidder + ""
+				//jsonSingleSeat, _ := GetJSONIndented(seatBid)
+				//redisKeyBidder, _ := addToRedis(jsonSingleSeat, 24*time.Hour, seatBid.Seat)
+				//redisKeyBidder = redisKeyBidder + ""
 				//fmt.Println("\nREDIS KEY:", redisKeyBidder)
 
 				for _, bid := range seatBid.Bid {
