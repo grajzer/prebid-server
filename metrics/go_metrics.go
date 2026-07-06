@@ -788,7 +788,7 @@ func RecordStoredImp(me *Metrics, storedImp string, adapterName string, measurem
 	custMeterName := fmt.Sprintf("stored_imp.%s.%s.requests.%s", storedImp, adapterName, measurement)
 	//prebidserver.adapter.yieldlab.prices.histogram,ad_unit=banner_top,account=abc
 	//prebidserver.stored_imp.807.yieldlab.requests.bid.meter
-	fmt.Println("RecordStoredImp", custMeterName)
+	//fmt.Println("RecordStoredImp", custMeterName)
 	custMeter := metrics.GetOrRegisterMeter(custMeterName, me.MetricsRegistry)
 	custMeter.Mark(1)
 }
