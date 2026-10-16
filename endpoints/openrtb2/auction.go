@@ -1909,11 +1909,6 @@ func (deps *endpointDeps) processStoredRequests(requestJson []byte, impInfo []Im
 		if impData.ImpExtPrebid.StoredRequest != nil && len(impData.ImpExtPrebid.StoredRequest.ID) > 0 {
 			//fmt.Println("AUCTION.GO processStoredRequests impData.ImpExtPrebid.StoredRequest.ID", impData.ImpExtPrebid.StoredRequest.ID)
 			resolvedImp, err := jsonpatch.MergePatch(storedImps[impData.ImpExtPrebid.StoredRequest.ID], impData.Imp)
-			//SET id manually to impData.ImpExtPrebid.StoredRequest.ID, prebid analytics issue
-			if err == nil {
-				resolvedImp, err = jsonparser.Set(resolvedImp, []byte(fmt.Sprintf("\"%s\"", impData.ImpExtPrebid.StoredRequest.ID)), "id")
-			}
-
 			if err != nil {
 				hasErr, errMessage := getJsonSyntaxError(impData.Imp)
 				if hasErr {
@@ -1947,7 +1942,7 @@ func (deps *endpointDeps) processStoredRequests(requestJson []byte, impInfo []Im
 			// Extract ConfigID from Merged Imp
 			configID, _ := jsonparser.GetString(resolvedImp, "ext", "prebid", "config_id")
 
-			impExtInfoMap[impId] = exchange.ImpExtInfo{EchoVideoAttrs: echoVideoAttributes, StoredImp: storedImps[impData.ImpExtPrebid.StoredRequest.ID], Passthrough: passthrough, ConfigID: configID}
+			impExtInfoMap[impId] = exchange.ImpExtInfo{EchoVideoAttrs: echoVideoAttributes, StoredImp: storedImps[impData.ImpExtPrebid.StoredRequest.ID], Passthrough: passthrough, ConfigID: configID, StoredRequestID: impData.ImpExtPrebid.StoredRequest.ID}
 
 		} else {
 			resolvedImps = append(resolvedImps, impData.Imp)

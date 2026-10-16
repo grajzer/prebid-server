@@ -272,9 +272,15 @@ func (rs *requestSplitter) cleanOpenRTBRequests(ctx context.Context,
 		}
 
 		impIDToConfigID := make(map[string]string)
+		impIDToStoredReqID := make(map[string]string)
 		for _, imp := range reqWrapperCopy.Imp {
-			if info, ok := auctionReq.ImpExtInfoMap[imp.ID]; ok && info.ConfigID != "" {
-				impIDToConfigID[imp.ID] = info.ConfigID
+			if info, ok := auctionReq.ImpExtInfoMap[imp.ID]; ok {
+				if info.ConfigID != "" {
+					impIDToConfigID[imp.ID] = info.ConfigID
+				}
+				if info.StoredRequestID != "" {
+					impIDToStoredReqID[imp.ID] = info.StoredRequestID
+				}
 			}
 		}
 
@@ -289,6 +295,7 @@ func (rs *requestSplitter) cleanOpenRTBRequests(ctx context.Context,
 			ForcePlcmt:            forcePlcmt,
 			SChain:                prebidSchain,
 			ImpIDToConfigID:       impIDToConfigID,
+			ImpIDToStoredReqID:    impIDToStoredReqID,
 		}
 		bidderRequests = append(bidderRequests, bidderRequest)
 	}

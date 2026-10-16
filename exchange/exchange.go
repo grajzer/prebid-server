@@ -182,10 +182,11 @@ func NewExchange(adapters map[openrtb_ext.BidderName]AdaptedBidder, cache prebid
 }
 
 type ImpExtInfo struct {
-	EchoVideoAttrs bool
-	StoredImp      []byte
-	Passthrough    json.RawMessage
-	ConfigID       string
+	EchoVideoAttrs  bool
+	StoredImp       []byte
+	Passthrough     json.RawMessage
+	ConfigID        string
+	StoredRequestID string
 }
 
 // AuctionRequest holds the bid request for the auction
@@ -234,6 +235,21 @@ type BidderRequest struct {
 	SChain                openrtb2.SupplyChain
 	ImpReplaceImpId       map[string]bool
 	ImpIDToConfigID       map[string]string
+	ImpIDToStoredReqID    map[string]string
+}
+
+// storedImpMetricLabel returns the metric label for the first imp: its stored request ID
+// (falling back to imp.id when no stored imp was used), suffixed with ".<config_id>" if present.
+func (br *BidderRequest) storedImpMetricLabel() string {
+	impID := br.BidRequest.Imp[0].ID
+	label := impID
+	if storedID, ok := br.ImpIDToStoredReqID[impID]; ok && storedID != "" {
+		label = storedID
+	}
+	if configID, ok := br.ImpIDToConfigID[impID]; ok && configID != "" {
+		label = fmt.Sprintf("%s.%s", label, configID)
+	}
+	return label
 }
 
 func (e *exchange) HoldAuction(ctx context.Context, r *AuctionRequest, debugLog *DebugLog) (*AuctionResponse, error) {
@@ -782,11 +798,7 @@ func (e *exchange) getAllBids(
 			brw.adapter = bidderRequest.BidderCoreName
 			// Defer basic metrics to insure we capture them after all the values have been set
 			defer func() {
-				storedImp := bidderRequest.BidRequest.Imp[0].ID
-				if configID, ok := bidderRequest.ImpIDToConfigID[storedImp]; ok && configID != "" {
-					storedImp = fmt.Sprintf("%s.%s", storedImp, configID)
-				}
-				e.me.RecordAdapterRequest(bidderRequest.BidderLabels, storedImp)
+				e.me.RecordAdapterRequest(bidderRequest.BidderLabels, bidderRequest.storedImpMetricLabel())
 			}()
 			start := time.Now()
 
@@ -834,11 +846,7 @@ func (e *exchange) getAllBids(
 				if seatBid != nil {
 					for _, bid := range seatBid.Bids {
 						var cpm = float64(bid.Bid.Price * 1000)
-						storedImp := bidderRequest.BidRequest.Imp[0].ID
-						if configID, ok := bidderRequest.ImpIDToConfigID[storedImp]; ok && configID != "" {
-							storedImp = fmt.Sprintf("%s.%s", storedImp, configID)
-						}
-						e.me.RecordAdapterPrice(bidderRequest.BidderLabels, cpm, storedImp)
+						e.me.RecordAdapterPrice(bidderRequest.BidderLabels, cpm, bidderRequest.storedImpMetricLabel())
 						e.me.RecordAdapterBidReceived(bidderRequest.BidderLabels, bid.BidType, bid.Bid.AdM != "")
 					}
 				}
