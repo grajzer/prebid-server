@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/julienschmidt/httprouter"
-	"github.com/prebid/prebid-server/v3/util/uuidutil"
+	"github.com/prebid/prebid-server/v4/util/uuidutil"
 )
 
 // NewUserSyncRedirectEndpoint returns a handler that issues a 302 redirect to the URL

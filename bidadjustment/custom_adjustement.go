@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/prebid/openrtb/v20/openrtb2"
-	"github.com/prebid/prebid-server/v3/openrtb_ext"
-	"github.com/prebid/prebid-server/v3/util/uuidutil"
+	"github.com/prebid/prebid-server/v4/openrtb_ext"
+	"github.com/prebid/prebid-server/v4/util/uuidutil"
 )
 
 type ExtRequest struct {
@@ -97,8 +97,10 @@ func StoreToRedis(r *openrtb_ext.RequestWrapper, response *openrtb2.BidResponse)
 		}
 	}
 
-	if r.Site.Page != "" {
+	if r.Site != nil && r.Site.Page != "" {
 		domain = r.Site.Page
+	} else if r.App != nil && r.App.Bundle != "" {
+		domain = r.App.Bundle
 	}
 
 	reqJson, _ := GetJSONIndented(r)
@@ -121,9 +123,9 @@ func StoreToRedis(r *openrtb_ext.RequestWrapper, response *openrtb2.BidResponse)
 		if errRedis == nil {
 			for i, seatBid := range response.SeatBid {
 
-				jsonSingleSeat, _ := GetJSONIndented(seatBid)
-				redisKeyBidder, _ := addToRedis(jsonSingleSeat, 24*time.Hour, seatBid.Seat)
-				redisKeyBidder = redisKeyBidder + ""
+				//jsonSingleSeat, _ := GetJSONIndented(seatBid)
+				//redisKeyBidder, _ := addToRedis(jsonSingleSeat, 24*time.Hour, seatBid.Seat)
+				//redisKeyBidder = redisKeyBidder + ""
 				//fmt.Println("\nREDIS KEY:", redisKeyBidder)
 
 				for _, bid := range seatBid.Bid {
