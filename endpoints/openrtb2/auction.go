@@ -1921,6 +1921,13 @@ func (deps *endpointDeps) processStoredRequests(requestJson []byte, impInfo []Im
 				}
 				return nil, nil, []error{err}
 			}
+
+			// Stored imp fields lose to the incoming imp in the merge above, so the media config
+			// override from the stored imp is applied on top of the merged result.
+			resolvedImp, err = applyMediaConfigOverride(resolvedImp)
+			if err != nil {
+				return nil, nil, []error{fmt.Errorf("imp.ext.prebid.storedrequest.id %s: invalid media_config: %v", impData.ImpExtPrebid.StoredRequest.ID, err)}
+			}
 			resolvedImps = append(resolvedImps, resolvedImp)
 			impId, err := jsonparser.GetString(resolvedImp, "id")
 			//fmt.Println("AUCTION.GO processStoredRequests IMP ID", impId)
