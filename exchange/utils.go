@@ -80,12 +80,9 @@ func (rs *requestSplitter) cleanOpenRTBRequests(ctx context.Context,
 		fmt.Println("\nFORCE PLACEMENT", forcePlcmt)
 	}*/
 
-	prebidSchain, errSchain := extractSchainWithStdlib(req.Imp[0].Ext)
-	if errSchain != nil {
-		//fmt.Println(errSchain)
-	}
-	//fmt.Println("prebidSchain", prebidSchain)
-	//fmt.Printf("struct1: %+v\n", prebidSchain)
+	// supply chains from the selected stored imp config: general and bidder-specific
+	prebidSchain, _ := extractSchainWithStdlib(req.Imp[0].Ext)
+	bidderSchains := extractBidderSchains(req.Imp[0].Ext)
 
 	requestAliases, requestAliasesGVLIDs, errs := getRequestAliases(req)
 	if len(errs) > 0 {
@@ -249,6 +246,14 @@ func (rs *requestSplitter) cleanOpenRTBRequests(ctx context.Context,
 			}
 		}
 
+		// config supply chain (bidder's own or general), after the chain from the request;
+		// done after the down conversion, so the bidder's schain location is known
+		ortb26 := ok && info.OpenRTB != nil && info.OpenRTB.Version == "2.6"
+		if err := appendConfigSChain(reqWrapperCopy, configSChainForBidder(prebidSchain, bidderSchains, bidder), ortb26); err != nil {
+			errs = append(errs, err)
+			continue
+		}
+
 		// sync wrapper
 		if err := reqWrapperCopy.RebuildRequest(); err != nil {
 			errs = append(errs, err)
@@ -294,7 +299,6 @@ func (rs *requestSplitter) cleanOpenRTBRequests(ctx context.Context,
 			ImpReplaceImpId:       auctionReq.BidderImpReplaceImpID[bidder],
 			BidderLabels:          bidderLabels,
 			ForcePlcmt:            forcePlcmt,
-			SChain:                prebidSchain,
 			ImpIDToConfigID:       impIDToConfigID,
 			ImpIDToStoredReqID:    impIDToStoredReqID,
 		}
