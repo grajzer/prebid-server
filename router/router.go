@@ -13,6 +13,7 @@ import (
 
 	openrtb2model "github.com/prebid/openrtb/v20/openrtb2"
 	analyticsBuild "github.com/prebid/prebid-server/v4/analytics/build"
+	"github.com/prebid/prebid-server/v4/bidadjustment"
 	"github.com/prebid/prebid-server/v4/config"
 	"github.com/prebid/prebid-server/v4/currency"
 	"github.com/prebid/prebid-server/v4/endpoints"
@@ -262,6 +263,8 @@ func New(cfg *config.Configuration, rateConvertor *currency.RateConverter) (r *R
 	macroReplacer := macros.NewStringIndexBasedReplacer()
 	theExchange := exchange.NewExchange(adapters, cacheClient, cfg, requestValidator, syncersByBidder, r.MetricsEngine, cfg.BidderInfos, gdprPermsBuilder, rateConvertor, categoriesFetcher, adsCertSigner, macroReplacer, priceFloorFetcher, singleFormatAdapters)
 	var uuidGenerator uuidutil.UUIDRandomGenerator
+	bidadjustment.SetRequestLogger(bidadjustment.NewRequestLogger(cfg.RequestLogging.StoredRequestIDs, cfg.RequestLogging.SampleRate))
+
 	openrtbEndpoint, err := openrtb2.NewEndpoint(uuidGenerator, theExchange, requestValidator, fetcher, accounts, cfg, r.MetricsEngine, analyticsRunner, disabledBidders, defReqJSON, activeBidders, storedRespFetcher, planBuilder, tmaxAdjustments)
 	if err != nil {
 		logger.Fatalf("Failed to create the openrtb2 endpoint handler. %v", err)

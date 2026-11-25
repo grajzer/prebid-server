@@ -193,6 +193,10 @@ func (deps *endpointDeps) Auction(w http.ResponseWriter, r *http.Request, _ http
 	w.Header().Set("X-Prebid", version.BuildXPrebidHeader(version.Ver))
 	setBrowsingTopicsHeader(w, r)
 
+	// Tracks the Redis key if this request is sampled for request logging, so the auction can log its debug data too.
+	requestLogCtx, requestLogState := bidadjustment.WithRequestLogState(r.Context())
+	r = r.WithContext(requestLogCtx)
+
 	req, impExtInfoMap, storedAuctionResponses, storedBidResponses, bidderImpReplaceImp, account, errL := deps.parseRequest(r, &labels, hookExecutor)
 	if errortypes.ContainsFatalError(errL) && writeError(errL, w, &labels) {
 		return
@@ -265,6 +269,7 @@ func (deps *endpointDeps) Auction(w http.ResponseWriter, r *http.Request, _ http
 		TmaxAdjustments:            deps.tmaxAdjustments,
 		GDPRSignal:                 gdprSignal,
 		GDPREnforced:               gdprEnforced,
+		RequestLogKey:              requestLogState.Key,
 	}
 	auctionResponse, err := deps.ex.HoldAuction(ctx, auctionRequest, nil)
 	defer func() {
@@ -463,6 +468,9 @@ func (deps *endpointDeps) parseRequest(httpRequest *http.Request, labels *metric
 			return
 		}
 	}
+
+	// Log a sample of the request exactly as received, before hooks and stored request merging.
+	bidadjustment.LogRawBidRequest(httpRequest.Context(), requestJson)
 
 	req = &openrtb_ext.RequestWrapper{}
 	req.BidRequest = &openrtb2.BidRequest{}

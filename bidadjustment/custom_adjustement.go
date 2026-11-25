@@ -104,7 +104,6 @@ func StoreToRedis(r *openrtb_ext.RequestWrapper, response *openrtb2.BidResponse)
 	}
 
 	reqJson, _ := GetJSONIndented(r)
-	//fmt.Println("\nREQ JSON", string(reqJson))
 	WriteToRedis(reqJson, 10*time.Minute, fmt.Sprintf("%s-%d", "bidder-debug-server-request", rand.IntN(10)))
 
 	//err := PrintJSONIndented(response)
@@ -232,7 +231,6 @@ func GetJSONIndented(v interface{}) (string, error) {
 
 func WriteToRedis(content string, exp time.Duration, key string) {
 	redisClient := GetRedisClient()
-
 	// Add a string with expiration time
 	err := redisClient.AddStringWithExpiration(key, content, exp)
 	if err != nil {
