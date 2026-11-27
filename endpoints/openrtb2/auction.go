@@ -472,10 +472,6 @@ func (deps *endpointDeps) parseRequest(httpRequest *http.Request, labels *metric
 	// Log a sample of the request exactly as received, before hooks and stored request merging.
 	bidadjustment.LogRawBidRequest(httpRequest.Context(), requestJson)
 
-	// Requests for the stored request IDs in request_logging.stored_request_ids come from an upstream
-	// PBS whose user.buyeruid is its own ID and not valid for our SSPs, so it is dropped before the auction.
-	dropBuyerUID := bidadjustment.IsLoggedStoredRequest(requestJson)
-
 	req = &openrtb_ext.RequestWrapper{}
 	req.BidRequest = &openrtb2.BidRequest{}
 
@@ -569,7 +565,10 @@ func (deps *endpointDeps) parseRequest(httpRequest *http.Request, labels *metric
 		return
 	}
 
-	if dropBuyerUID && req.User != nil {
+	// An incoming user.buyeruid is never sent to our SSPs: it belongs to whoever called us (e.g. an
+	// upstream PBS), not to the bidders. Per-bidder buyer IDs come from user.ext.prebid.buyeruids
+	// or from our uids cookie, both applied per bidder in the exchange (prepareUser).
+	if req.User != nil {
 		req.User.BuyerUID = ""
 	}
 

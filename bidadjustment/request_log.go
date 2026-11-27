@@ -103,7 +103,7 @@ func (l *RequestLogger) LogRaw(requestJSON []byte) string {
 		return ""
 	}
 	storedRequestID := rawStoredRequestID(requestJSON)
-	if !l.hasStoredRequestID(storedRequestID) {
+	if _, ok := l.storedRequestIDs[storedRequestID]; !ok {
 		return ""
 	}
 	if l.randIntN(l.sampleRate) != 0 {
@@ -112,26 +112,6 @@ func (l *RequestLogger) LogRaw(requestJSON []byte) string {
 	key := storedRequestLogKey(storedRequestID, l.randIntN(storedRequestLogSlots))
 	l.write(string(requestJSON), storedRequestLogTTL, key)
 	return key
-}
-
-// hasStoredRequestID reports whether id is one of the configured stored request IDs.
-func (l *RequestLogger) hasStoredRequestID(id string) bool {
-	if l == nil || id == "" {
-		return false
-	}
-	_, ok := l.storedRequestIDs[id]
-	return ok
-}
-
-// IsLoggedStoredRequest reports whether the raw bid request's imp[0].ext.prebid.storedrequest.id
-// is one of the stored request IDs configured in request_logging.stored_request_ids, regardless
-// of sampling.
-func IsLoggedStoredRequest(requestJSON []byte) bool {
-	l := requestLogger.Load()
-	if l == nil {
-		return false
-	}
-	return l.hasStoredRequestID(rawStoredRequestID(requestJSON))
 }
 
 // LogDebugData stores the auction's debug data (the response ext with debug info) in Redis
