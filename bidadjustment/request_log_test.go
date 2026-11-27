@@ -120,3 +120,18 @@ func TestLogRawBidRequestNotSampledLeavesKeyEmpty(t *testing.T) {
 	LogRawBidRequest(ctx, []byte(rawRequest807))
 	assert.Equal(t, "", state.Key)
 }
+
+func TestIsLoggedStoredRequest(t *testing.T) {
+	SetRequestLogger(nil)
+	assert.False(t, IsLoggedStoredRequest([]byte(rawRequest807)), "no logger configured")
+
+	// Sampling must not matter: the logger never samples here, but the stored request still matches.
+	l, _ := newTestRequestLogger([]string{"807", "1071"}, 2000, func(int) int { return 1 })
+	SetRequestLogger(l)
+	defer SetRequestLogger(nil)
+
+	assert.True(t, IsLoggedStoredRequest([]byte(rawRequest807)))
+	assert.True(t, IsLoggedStoredRequest([]byte(`{"imp":[{"ext":{"prebid":{"storedrequest":{"id":1071}}}}]}`)))
+	assert.False(t, IsLoggedStoredRequest([]byte(`{"imp":[{"ext":{"prebid":{"storedrequest":{"id":"999"}}}}]}`)))
+	assert.False(t, IsLoggedStoredRequest([]byte(`{"id":"no-imps"}`)))
+}

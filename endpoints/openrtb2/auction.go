@@ -472,6 +472,10 @@ func (deps *endpointDeps) parseRequest(httpRequest *http.Request, labels *metric
 	// Log a sample of the request exactly as received, before hooks and stored request merging.
 	bidadjustment.LogRawBidRequest(httpRequest.Context(), requestJson)
 
+	// Requests for the stored request IDs in request_logging.stored_request_ids come from an upstream
+	// PBS whose user.buyeruid is its own ID and not valid for our SSPs, so it is dropped before the auction.
+	dropBuyerUID := bidadjustment.IsLoggedStoredRequest(requestJson)
+
 	req = &openrtb_ext.RequestWrapper{}
 	req.BidRequest = &openrtb2.BidRequest{}
 
@@ -563,6 +567,10 @@ func (deps *endpointDeps) parseRequest(httpRequest *http.Request, labels *metric
 	if err := jsonutil.UnmarshalValid(requestJson, req.BidRequest); err != nil {
 		errs = []error{err}
 		return
+	}
+
+	if dropBuyerUID && req.User != nil {
+		req.User.BuyerUID = ""
 	}
 
 	/*fmt.Println("\n")
