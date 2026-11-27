@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 
+	"github.com/buger/jsonparser"
+
 	"github.com/prebid/openrtb/v20/openrtb2"
 	"github.com/prebid/prebid-server/v4/openrtb_ext"
 	"github.com/prebid/prebid-server/v4/ortb"
@@ -57,7 +59,15 @@ func configSChainForBidder(general openrtb2.SupplyChain, byBidder map[string]ope
 	return general
 }
 
-// appendConfigSChain adds the config chain to the bidder request:
+// extractSchainOverride reads imp.ext.prebid.schain_override of the selected stored imp config.
+// When true, the config chain replaces the supply chain of the incoming request instead of being appended to it.
+func extractSchainOverride(ext json.RawMessage) bool {
+	override, err := jsonparser.GetBoolean(ext, "prebid", "schain_override")
+	return err == nil && override
+}
+
+// applyConfigSChain adds the config chain to the bidder request:
+//   - override: the config chain replaces any supply chain of the incoming request (both locations are cleared);
 //   - if the incoming request already has a supply chain (e.g. the publisher node sent by the page),
 //     the config nodes are appended after its nodes, ver/complete of the request chain are kept;
 //   - otherwise the config chain is used as is.
@@ -65,7 +75,7 @@ func configSChainForBidder(general openrtb2.SupplyChain, byBidder map[string]ope
 // The chain is read from and written to the location used by the bidder's OpenRTB version:
 // source.schain for 2.6, source.ext.schain for 2.5 (call it after the down conversion).
 // Source is cloned first, because it is shared between the bidder requests.
-func appendConfigSChain(reqWrapper *openrtb_ext.RequestWrapper, config openrtb2.SupplyChain, ortb26 bool) error {
+func applyConfigSChain(reqWrapper *openrtb_ext.RequestWrapper, config openrtb2.SupplyChain, ortb26, override bool) error {
 	if len(config.Nodes) == 0 {
 		return nil
 	}
@@ -74,6 +84,10 @@ func appendConfigSChain(reqWrapper *openrtb_ext.RequestWrapper, config openrtb2.
 		reqWrapper.Source = &openrtb2.Source{}
 	} else {
 		reqWrapper.Source = ortb.CloneSource(reqWrapper.Source)
+	}
+
+	if override {
+		return setSChain(reqWrapper, ortb.CloneSChain(&config), ortb26)
 	}
 
 	// OpenRTB 2.6 location
@@ -95,10 +109,23 @@ func appendConfigSChain(reqWrapper *openrtb_ext.RequestWrapper, config openrtb2.
 	}
 
 	// no chain in the request: the config chain as is
-	chain := ortb.CloneSChain(&config)
+	return setSChain(reqWrapper, ortb.CloneSChain(&config), ortb26)
+}
+
+// setSChain writes the chain to the location of the bidder's OpenRTB version and removes it from the other one,
+// so the bidder never gets two different chains.
+func setSChain(reqWrapper *openrtb_ext.RequestWrapper, chain *openrtb2.SupplyChain, ortb26 bool) error {
+	sourceExt, err := reqWrapper.GetSourceExt()
+	if err != nil {
+		return err
+	}
 	if ortb26 {
 		reqWrapper.Source.SChain = chain
+		if sourceExt.GetSChain() != nil {
+			sourceExt.SetSChain(nil)
+		}
 	} else {
+		reqWrapper.Source.SChain = nil
 		sourceExt.SetSChain(chain)
 	}
 	return nil

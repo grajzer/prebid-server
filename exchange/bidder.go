@@ -184,7 +184,7 @@ func (bidder *BidderAdapter) requestBid(ctx context.Context, bidderRequest Bidde
 		return nil, extraBidderRespInfo{}, []error{reject}
 	}
 
-	// the config supply chain is applied in cleanOpenRTBRequests (appendConfigSChain)
+	// the config supply chain is applied in cleanOpenRTBRequests (applyConfigSChain)
 
 	var (
 		reqData         []*adapters.RequestData

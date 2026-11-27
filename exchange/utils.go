@@ -83,6 +83,7 @@ func (rs *requestSplitter) cleanOpenRTBRequests(ctx context.Context,
 	// supply chains from the selected stored imp config: general and bidder-specific
 	prebidSchain, _ := extractSchainWithStdlib(req.Imp[0].Ext)
 	bidderSchains := extractBidderSchains(req.Imp[0].Ext)
+	schainOverride := extractSchainOverride(req.Imp[0].Ext)
 
 	requestAliases, requestAliasesGVLIDs, errs := getRequestAliases(req)
 	if len(errs) > 0 {
@@ -246,10 +247,11 @@ func (rs *requestSplitter) cleanOpenRTBRequests(ctx context.Context,
 			}
 		}
 
-		// config supply chain (bidder's own or general), after the chain from the request;
+		// config supply chain (bidder's own or general): after the chain from the request,
+		// or instead of it when the config sets schain_override;
 		// done after the down conversion, so the bidder's schain location is known
 		ortb26 := ok && info.OpenRTB != nil && info.OpenRTB.Version == "2.6"
-		if err := appendConfigSChain(reqWrapperCopy, configSChainForBidder(prebidSchain, bidderSchains, bidder), ortb26); err != nil {
+		if err := applyConfigSChain(reqWrapperCopy, configSChainForBidder(prebidSchain, bidderSchains, bidder), ortb26, schainOverride); err != nil {
 			errs = append(errs, err)
 			continue
 		}
