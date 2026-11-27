@@ -3,6 +3,7 @@ package exchange
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/prebid/openrtb/v20/openrtb2"
@@ -59,7 +60,7 @@ func TestConfigSChainForBidder(t *testing.T) {
 	assert.Equal(t, []string{"general.com/1"}, asis(&other))
 }
 
-func TestAppendConfigSChain(t *testing.T) {
+func TestApplyConfigSChain(t *testing.T) {
 	config := openrtb2.SupplyChain{Ver: "1.0", Complete: 1, Nodes: []openrtb2.SupplyChainNode{node("intermediary.example", "int-1")}}
 	requestChain := func() *openrtb2.SupplyChain {
 		return &openrtb2.SupplyChain{Ver: "1.0", Complete: 1, Nodes: []openrtb2.SupplyChainNode{node("publisher.example", "pub-1")}}
@@ -69,7 +70,7 @@ func TestAppendConfigSChain(t *testing.T) {
 		shared := &openrtb2.Source{TID: "t", SChain: requestChain()}
 		rw := &openrtb_ext.RequestWrapper{BidRequest: &openrtb2.BidRequest{Source: shared}}
 
-		require.NoError(t, appendConfigSChain(rw, config, true))
+		require.NoError(t, applyConfigSChain(rw, config, true, false))
 		require.NoError(t, rw.RebuildRequest())
 
 		assert.Equal(t, []string{"publisher.example/pub-1", "intermediary.example/int-1"}, asis(rw.Source.SChain))
@@ -81,7 +82,7 @@ func TestAppendConfigSChain(t *testing.T) {
 		sharedExt := string(shared.Ext)
 		rw := &openrtb_ext.RequestWrapper{BidRequest: &openrtb2.BidRequest{Source: shared}}
 
-		require.NoError(t, appendConfigSChain(rw, config, false))
+		require.NoError(t, applyConfigSChain(rw, config, false, false))
 		require.NoError(t, rw.RebuildRequest())
 
 		assert.Nil(t, rw.Source.SChain)
@@ -93,7 +94,7 @@ func TestAppendConfigSChain(t *testing.T) {
 	t.Run("no-request-chain-ortb26", func(t *testing.T) {
 		rw := &openrtb_ext.RequestWrapper{BidRequest: &openrtb2.BidRequest{Source: &openrtb2.Source{TID: "t"}}}
 
-		require.NoError(t, appendConfigSChain(rw, config, true))
+		require.NoError(t, applyConfigSChain(rw, config, true, false))
 		require.NoError(t, rw.RebuildRequest())
 
 		assert.Equal(t, []string{"intermediary.example/int-1"}, asis(rw.Source.SChain))
@@ -103,7 +104,7 @@ func TestAppendConfigSChain(t *testing.T) {
 	t.Run("no-request-chain-ortb25", func(t *testing.T) {
 		rw := &openrtb_ext.RequestWrapper{BidRequest: &openrtb2.BidRequest{Source: &openrtb2.Source{TID: "t"}}}
 
-		require.NoError(t, appendConfigSChain(rw, config, false))
+		require.NoError(t, applyConfigSChain(rw, config, false, false))
 		require.NoError(t, rw.RebuildRequest())
 
 		assert.Nil(t, rw.Source.SChain)
@@ -116,25 +117,72 @@ func TestAppendConfigSChain(t *testing.T) {
 	t.Run("no-source-in-request", func(t *testing.T) {
 		rw := &openrtb_ext.RequestWrapper{BidRequest: &openrtb2.BidRequest{}}
 
-		require.NoError(t, appendConfigSChain(rw, config, true))
+		require.NoError(t, applyConfigSChain(rw, config, true, false))
 
 		require.NotNil(t, rw.Source)
 		assert.Equal(t, []string{"intermediary.example/int-1"}, asis(rw.Source.SChain))
+	})
+
+	t.Run("override-ortb26-request-chain-replaced", func(t *testing.T) {
+		shared := &openrtb2.Source{TID: "t", SChain: requestChain()}
+		rw := &openrtb_ext.RequestWrapper{BidRequest: &openrtb2.BidRequest{Source: shared}}
+
+		require.NoError(t, applyConfigSChain(rw, config, true, true))
+		require.NoError(t, rw.RebuildRequest())
+
+		assert.Equal(t, []string{"intermediary.example/int-1"}, asis(rw.Source.SChain))
+		assert.Equal(t, []string{"publisher.example/pub-1"}, asis(shared.SChain), "shared source must not be modified")
+	})
+
+	t.Run("override-ortb26-request-chain-in-ext-removed", func(t *testing.T) {
+		shared := &openrtb2.Source{TID: "t", Ext: json.RawMessage(`{"schain":{"ver":"1.0","complete":1,"nodes":[{"asi":"publisher.example","sid":"pub-1","hp":1}]},"other":1}`)}
+		rw := &openrtb_ext.RequestWrapper{BidRequest: &openrtb2.BidRequest{Source: shared}}
+
+		require.NoError(t, applyConfigSChain(rw, config, true, true))
+		require.NoError(t, rw.RebuildRequest())
+
+		assert.Equal(t, []string{"intermediary.example/int-1"}, asis(rw.Source.SChain))
+		assert.JSONEq(t, `{"other":1}`, string(rw.Source.Ext), "request chain in source.ext is dropped, other fields kept")
+	})
+
+	t.Run("override-ortb25-request-chain-replaced", func(t *testing.T) {
+		shared := &openrtb2.Source{TID: "t", Ext: json.RawMessage(`{"schain":{"ver":"1.0","complete":1,"nodes":[{"asi":"publisher.example","sid":"pub-1","hp":1}]},"other":1}`)}
+		sharedExt := string(shared.Ext)
+		rw := &openrtb_ext.RequestWrapper{BidRequest: &openrtb2.BidRequest{Source: shared}}
+
+		require.NoError(t, applyConfigSChain(rw, config, false, true))
+		require.NoError(t, rw.RebuildRequest())
+
+		assert.Nil(t, rw.Source.SChain)
+		assert.Equal(t, []string{"intermediary.example/int-1"}, asis(sourceExtSChain(t, rw.Source.Ext)))
+		assert.Contains(t, string(rw.Source.Ext), `"other":1`, "other source.ext fields are kept")
+		assert.Equal(t, sharedExt, string(shared.Ext), "shared source must not be modified")
+	})
+
+	t.Run("override-no-request-chain", func(t *testing.T) {
+		rw := &openrtb_ext.RequestWrapper{BidRequest: &openrtb2.BidRequest{Source: &openrtb2.Source{TID: "t"}}}
+
+		require.NoError(t, applyConfigSChain(rw, config, false, true))
+		require.NoError(t, rw.RebuildRequest())
+
+		assert.Nil(t, rw.Source.SChain)
+		assert.Equal(t, []string{"intermediary.example/int-1"}, asis(sourceExtSChain(t, rw.Source.Ext)))
 	})
 
 	t.Run("empty-config-nothing-changes", func(t *testing.T) {
 		shared := &openrtb2.Source{TID: "t", SChain: requestChain()}
 		rw := &openrtb_ext.RequestWrapper{BidRequest: &openrtb2.BidRequest{Source: shared}}
 
-		require.NoError(t, appendConfigSChain(rw, openrtb2.SupplyChain{}, true))
+		require.NoError(t, applyConfigSChain(rw, openrtb2.SupplyChain{}, true, true))
 
 		assert.Same(t, shared, rw.Source)
 	})
 }
 
-// End to end through the request splitter: the page sends the publisher node, the config adds
-// an intermediary node (general) and a bidder-specific chain; bidders on OpenRTB 2.5 and 2.6.
-func TestCleanOpenRTBRequestsConfigSChain(t *testing.T) {
+// splitWithConfigSChain runs the request splitter for a request whose page sends the publisher node
+// and whose stored imp config is impPrebid; bidders on OpenRTB 2.5 (appnexus, yieldlab) and 2.6 (rubicon).
+func splitWithConfigSChain(t *testing.T, impPrebid string) (map[string]*openrtb2.Source, *openrtb2.BidRequest) {
+	t.Helper()
 	req := &openrtb2.BidRequest{
 		ID:   "r1",
 		Site: &openrtb2.Site{},
@@ -144,13 +192,8 @@ func TestCleanOpenRTBRequestsConfigSChain(t *testing.T) {
 			SChain: &openrtb2.SupplyChain{Ver: "1.0", Complete: 1, Nodes: []openrtb2.SupplyChainNode{node("publisher.example", "pub-1")}},
 		},
 		Imp: []openrtb2.Imp{{
-			ID: "imp-1",
-			Ext: json.RawMessage(`{"prebid":{
-				"bidder":{"appnexus":{"placementId":1},"rubicon":{"accountId":1,"siteId":2,"zoneId":3},"yieldlab":{"adslotId":"1","supplyId":"2"}},
-				"schain":{"ver":"1.0","complete":1,"nodes":[{"asi":"intermediary.example","sid":"int-1","hp":1}]},
-				"schains":[{"bidders":["appnexus"],"schain":{"ver":"1.0","complete":1,"nodes":[
-					{"asi":"intermediary.example","sid":"int-1","hp":1},{"asi":"reseller.example","sid":"res-1","hp":1}]}}]
-			}}`),
+			ID:  "imp-1",
+			Ext: json.RawMessage(`{"prebid":` + impPrebid + `}`),
 		}},
 	}
 
@@ -179,6 +222,20 @@ func TestCleanOpenRTBRequestsConfigSChain(t *testing.T) {
 	for _, br := range bidderRequests {
 		got[string(br.BidderName)] = br.BidRequest.Source
 	}
+	return got, req
+}
+
+const configSChainImpPrebid = `{
+	"bidder":{"appnexus":{"placementId":1},"rubicon":{"accountId":1,"siteId":2,"zoneId":3},"yieldlab":{"adslotId":"1","supplyId":"2"}},
+	"schain":{"ver":"1.0","complete":1,"nodes":[{"asi":"intermediary.example","sid":"int-1","hp":1}]},
+	"schains":[{"bidders":["appnexus"],"schain":{"ver":"1.0","complete":1,"nodes":[
+		{"asi":"intermediary.example","sid":"int-1","hp":1},{"asi":"reseller.example","sid":"res-1","hp":1}]}}]%s
+}`
+
+// End to end through the request splitter: the page sends the publisher node, the config adds
+// an intermediary node (general) and a bidder-specific chain; bidders on OpenRTB 2.5 and 2.6.
+func TestCleanOpenRTBRequestsConfigSChain(t *testing.T) {
+	got, req := splitWithConfigSChain(t, fmt.Sprintf(configSChainImpPrebid, ""))
 
 	// appnexus, OpenRTB 2.5: own chain (append mode) after the page node, in source.ext.schain
 	assert.Nil(t, got["appnexus"].SChain)
@@ -194,6 +251,29 @@ func TestCleanOpenRTBRequestsConfigSChain(t *testing.T) {
 
 	// the original request is not modified
 	assert.Equal(t, []string{"publisher.example/pub-1"}, asis(req.Source.SChain))
+}
+
+// Same request with schain_override: the config chains replace the page node for every bidder.
+func TestCleanOpenRTBRequestsConfigSChainOverride(t *testing.T) {
+	got, req := splitWithConfigSChain(t, fmt.Sprintf(configSChainImpPrebid, `,"schain_override":true`))
+
+	assert.Nil(t, got["appnexus"].SChain)
+	assert.Equal(t, []string{"intermediary.example/int-1", "reseller.example/res-1"}, asis(sourceExtSChain(t, got["appnexus"].Ext)))
+
+	assert.Equal(t, []string{"intermediary.example/int-1"}, asis(got["rubicon"].SChain))
+	assert.Empty(t, got["rubicon"].Ext)
+
+	assert.Nil(t, got["yieldlab"].SChain)
+	assert.Equal(t, []string{"intermediary.example/int-1"}, asis(sourceExtSChain(t, got["yieldlab"].Ext)))
+
+	assert.Equal(t, []string{"publisher.example/pub-1"}, asis(req.Source.SChain))
+}
+
+func TestExtractSchainOverride(t *testing.T) {
+	assert.True(t, extractSchainOverride(json.RawMessage(`{"prebid":{"schain_override":true}}`)))
+	assert.False(t, extractSchainOverride(json.RawMessage(`{"prebid":{"schain_override":false}}`)))
+	assert.False(t, extractSchainOverride(json.RawMessage(`{"prebid":{}}`)))
+	assert.False(t, extractSchainOverride(nil))
 }
 
 func sourceExtSChain(t *testing.T, ext json.RawMessage) *openrtb2.SupplyChain {
